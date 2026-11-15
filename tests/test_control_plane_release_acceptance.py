@@ -231,16 +231,17 @@ def test_teams_live_cutover_is_scoped_fail_closed_and_shell_valid():
     assert 'ln -sfn "$RELEASE" "$CURRENT"' not in content
 
 
-def test_teams_live_cutover_only_runs_on_explicit_main_intent():
+def test_teams_live_cutover_requires_explicit_existing_operator_dispatch():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml").read_text(encoding="utf-8")
-    assert "branches: [core/integration, main]" in workflow
-    assert "governance/release-intents/teams-immutable-20261115.json" in workflow
-    assert "git diff --name-only" in workflow
-    assert "teams-release-intent:" in workflow
-    assert "needs: teams-release-intent" in workflow
-    assert "needs.teams-release-intent.outputs.deploy == 'true'" in workflow
-    assert "bash -s -- \"$GITHUB_SHA\" <<'REMOTE'" in workflow
+    assert "branches: [core/integration]" in workflow
+    assert "teams_only:" in workflow
+    assert "teams-immutable-cutover:" in workflow
+    assert "inputs.teams_only == true" in workflow
+    assert "github.ref_name == 'main'" in workflow
     assert "github.event_name == 'workflow_dispatch'" in workflow
+    assert "bash -s -- \"$GITHUB_SHA\" <<'REMOTE'" in workflow
+    assert "governance/release-intents/teams-immutable-20261115.json" not in workflow
+    assert "teams-release-intent:" not in workflow
