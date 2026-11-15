@@ -309,6 +309,11 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
                 "wait_seconds": "120",
             }:
                 raise ValueError("Golden Path only allows exact read-only oracle-exec inspection")
+        elif (workflow, ref) == ("oracle-core-bundle-immutable-runtime-convergence.yml", "main"):
+            # The workflow's default mode mutates the whole Core bundle.
+            # Caller must explicitly select the isolated Teams-only mode.
+            if inputs != {"teams_only": "true"}:
+                raise ValueError("Teams cutover only allows exact teams_only=true")
         else:
             raise ValueError("GitHub Actions dispatch target is not allowlisted")
     if unknown:
