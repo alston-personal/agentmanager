@@ -11,8 +11,8 @@ permissions:
 jobs:
   bootstrap:
     # The existing recovery script mutates ubuntu-owned Chronos and spool
-    # directories. Running it as the agentos-node hosted runner fails on
-    # /home/ubuntu/agent-data and cannot be used as a recovery authority.
+    # directories. A non-owner self-hosted runner failed with EACCES;
+    # the enforced ubuntu-only SSH identity is now the recovery boundary.
     # Reuse the already-authorized Oracle ubuntu SSH lane, without making
     # this emergency-only workflow automatic or weakening its SHA fence.
     runs-on: ubuntu-latest
