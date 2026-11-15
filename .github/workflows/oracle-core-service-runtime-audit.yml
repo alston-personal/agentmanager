@@ -171,6 +171,70 @@ jobs:
                       ).fetchone()[0] if conn.execute(
                           "SELECT 1 FROM sqlite_master WHERE name='runtime_targets'"
                       ).fetchone() else 0
+              # Read-only backlog/target inventory; only aggregate counts
+              # are returned, never task IDs, project names, capabilities,
+              # target names, payloads, endpoints or credentials.
+              if observed.get("db_schema_read"):
+                  with sqlite3.connect(uri, uri=True, timeout=5) as conn:
+                      conn.execute("PRAGMA query_only=ON")
+                      target_rows = conn.execute(
+                          "SELECT target_id, target_kind, capabilities_json, enabled "
+                          "FROM runtime_targets"
+                      ).fetchall() if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='runtime_targets'"
+                      ).fetchone() else []
+                      targets = {
+                          row[0]: (str(row[1]), bool(row[3]))
+                          for row in target_rows
+                      }
+                      observed["target_kind_counts"] = {
+                          kind: sum(1 for t in targets.values()
+                                    if t[0] == kind and t[1])
+                          for kind in sorted({t[0] for t in targets.values() if t[1]})
+                          if kind in ("github_actions", "webhook")
+                      }
+                      categories = {
+                          "canonical_ir_target_enabled": 0,
+                          "canonical_ir_target_disabled_or_unknown": 0,
+                          "canonical_ir_untargeted": 0,
+                          "non_ir_targeted": 0,
+                          "non_ir_untargeted": 0,
+                          "unparseable_payload": 0,
+                      }
+                      for target_id, payload_raw in conn.execute(
+                          "SELECT target_node_id, payload_json FROM tasks "
+                          "WHERE status='submitted'"
+                      ):
+                          try:
+                              payload = json.loads(payload_raw)
+                          except (TypeError, ValueError):
+                              categories["unparseable_payload"] += 1
+                              continue
+                          is_ir = isinstance(payload, dict) and (
+                              payload.get("protocol") == "agentos.distributed-task/v1"
+                          )
+                          if not is_ir:
+                              categories["non_ir_targeted" if target_id
+                                         else "non_ir_untargeted"] += 1
+                          elif not target_id:
+                              categories["canonical_ir_untargeted"] += 1
+                          elif targets.get(target_id, ("", False))[1]:
+                              categories["canonical_ir_target_enabled"] += 1
+                          else:
+                              categories["canonical_ir_target_disabled_or_unknown"] += 1
+                      observed["submitted_task_classes"] = categories
+                      observed["submitted_inventory_reconciles"] = (
+                          sum(categories.values()) == observed["submitted_count"]
+                      )
+                      observed["dispatch_state_counts"] = {}
+                      if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='runtime_dispatches'"
+                      ).fetchone():
+                          for state, count in conn.execute(
+                              "SELECT status, COUNT(*) FROM runtime_dispatches GROUP BY status"
+                          ):
+                              if state in ("dispatching", "dispatched", "failed"):
+                                  observed["dispatch_state_counts"][state] = count
               # AgentOS config.py loads two env files through setdefault()
               # after process exec. Report *only* redacted effective booleans.
               effective = dict(env)
