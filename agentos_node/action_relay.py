@@ -874,6 +874,7 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
         ("alston-personal/agentmanager", "agentos-dispatch.yml", "core/integration"),
         ("alston-personal/agentmanager", "oracle-colab-minimax-h3-smoke.yml", "main"),
+        ("alston-personal/agentmanager", "oracle-core-bundle-immutable-runtime-convergence.yml", "main"),
     }
     repository = str(params.get("repository") or "")
     workflow = str(params.get("workflow") or "")
@@ -900,6 +901,9 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
             "wait_seconds": "120",
         }:
             raise ValueError("Golden Path dispatch inputs are not allowlisted")
+    elif workflow == "oracle-core-bundle-immutable-runtime-convergence.yml":
+        if ref != "main" or inputs != {"teams_only": "true"}:
+            raise ValueError("Teams cutover permits only main with teams_only=true")
     else:
         raise ValueError("workflow not allowlisted")
 
