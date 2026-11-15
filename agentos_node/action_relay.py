@@ -918,6 +918,36 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
             "error": "ubuntu GitHub identity is not authenticated",
         }
 
+    if workflow == "oracle-core-bundle-immutable-runtime-convergence.yml":
+        # This operation changes a live systemd service. The caller-provided
+        # source SHA must still be the *current* protected main generation,
+        # not merely a well-formed old commit. Reject before workflow launch.
+        head_check = _run([
+            "/usr/bin/gh", "api",
+            "repos/alston-personal/agentmanager/git/ref/heads/main",
+        ], cwd=Path.home(), timeout=20)
+        if head_check["returncode"] != 0:
+            return {
+                "ok": False,
+                "workflow": workflow,
+                "ref": ref,
+                "dispatched": False,
+                "error": "protected main head verification unavailable",
+            }
+        try:
+            head = json.loads(head_check.get("stdout") or "{}")
+            actual_sha = str((head.get("object") or {}).get("sha") or "")
+        except (ValueError, AttributeError, TypeError):
+            actual_sha = ""
+        if actual_sha != expected_head_sha:
+            return {
+                "ok": False,
+                "workflow": workflow,
+                "ref": ref,
+                "dispatched": False,
+                "error": "protected main head differs from approved source commit",
+            }
+
     dispatched_not_before = datetime.now(timezone.utc)
     dispatch = _run([
         "/usr/bin/gh", "workflow", "run", workflow,
