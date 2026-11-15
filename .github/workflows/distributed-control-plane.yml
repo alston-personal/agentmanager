@@ -42,7 +42,7 @@ jobs:
           tests/test_distributed_runtime.py tests/test_project_state.py
           tests/test_project_state_http.py tests/test_runtime_dispatcher.py
           tests/test_dispatching_gateway.py tests/test_push_dispatch.py
-          tests/test_push_task_lease.py tests/test_continuity_mirror.py
+          tests/test_push_task_lease.py tests/test_continuation_wake_recovery.py tests/test_continuity_mirror.py
           tests/test_executor_working_set.py tests/test_control_plane.py
           tests/test_node_registry_v01.py tests/test_node_registry_recovery.py
           tests/test_runtime_ownership.py tests/test_control_plane_inspection.py
