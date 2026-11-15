@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from scripts.attest_realm_loaded_source_redacted import parse_environ, sha256, source_attestation, is_realm_8780_command, has_main_runtime_repair_policy
+from scripts.attest_realm_loaded_source_redacted import parse_environ, sha256, source_attestation, is_realm_8780_command, has_main_runtime_repair_policy, unit_source_candidate
 
 class RealmSourceRedactionTests(unittest.TestCase):
     def test_only_pythonpath_is_parsed(self):
@@ -50,6 +50,20 @@ class RealmSourceRedactionTests(unittest.TestCase):
             self.assertIs(has_main_runtime_repair_policy(candidate), True)
             self.assertIs(has_main_runtime_repair_policy(Path(root) / "absent.py"), False)
 
+    @patch("scripts.attest_realm_loaded_source_redacted.subprocess.check_output",
+           return_value="/home/ubuntu/.local/share/agentos/realm-fabric/current\\n")
+    def test_realm_unit_immutable_workdir_is_a_separate_source_candidate(self, check):
+        path, category = unit_source_candidate()
+        self.assertEqual(category, "realm_immutable_or_current")
+        self.assertEqual(path.name, "realm_server.py")
+        self.assertNotIn("secret", repr(category))
+
+    @patch("scripts.attest_realm_loaded_source_redacted.subprocess.check_output",
+           return_value="/home/ubuntu/agentmanager\\n")
+    def test_legacy_mutable_unit_workdir_is_not_mislabeled_immutable(self, check):
+        _, category = unit_source_candidate()
+        self.assertEqual(category, "mutable_source_checkout")
+
     def test_file_digest_does_not_disclose_content(self):
         with TemporaryDirectory() as root:
             path = Path(root) / "realm.py"
@@ -72,6 +86,8 @@ class RealmSourceRedactionTests(unittest.TestCase):
         self.assertIn("unit_mainpid_is_listener", result)
         self.assertIn("checkout_main_runtime_oidc_policy_present", result)
         self.assertIn("process_candidate_main_runtime_oidc_policy_present", result)
+        self.assertIn("unit_source_candidate_matches_expected", result)
+        self.assertIn("unit_source_candidate_has_main_runtime_oidc_policy", result)
         self.assertNotIn("pid", result)
         self.assertNotIn("environment", result)
         self.assertNotIn("source_path", result)
