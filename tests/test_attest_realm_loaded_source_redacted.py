@@ -21,6 +21,19 @@ class RealmSourceRedactionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact lowercase SHA256"):
             source_attestation()
 
+    def test_realm_release_reuses_existing_relay_deployer_and_attests_oidc(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/deploy-realm-fabric-core.yml").read_text(encoding="utf-8")
+        self.assertIn("python3 scripts/install_realm_fabric_via_action_relay.py", workflow)
+        self.assertIn("attest-oidc-source:", workflow)
+        self.assertIn("needs: [deploy]", workflow)
+        self.assertIn("unit_source_candidate_matches_expected", workflow)
+        self.assertIn("unit_source_candidate_has_main_runtime_oidc_policy", workflow)
+        self.assertIn("realm_oidc_source_disk=PASS", workflow)
+        self.assertIn("realm_oidc_in_memory_verified=false", workflow)
+        self.assertIn("AGENTOS_REALM_ATTEST_EXPECTED_SHA256=$EXPECTED_SHA", workflow)
+        self.assertNotIn("AGENTOS_REALM_ATTEST_EXPECTED_SHA256=unknown", workflow)
+
     def test_canonical_attestation_uses_actual_ubuntu_service_identity(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/oracle-attest-realm-fabric-process.yml").read_text(encoding="utf-8")
