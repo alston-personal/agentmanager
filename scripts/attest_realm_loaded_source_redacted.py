@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import urllib.error
@@ -18,7 +19,10 @@ import urllib.request
 SCHEMA = "agentos.realm-loaded-source-attestation/v1"
 UNIT = "agentos-realm-fabric.service"
 MODULE = "agent_core/realm_server.py"
-ROOT = Path(__file__).resolve().parents[1]
+# A trusted hosted-Runner may stream this very script to the ubuntu user.
+# In that case __file__ is <stdin>; pin the root explicitly and compare the
+# live files against a trusted exact-commit SHA256, never the same local file.
+ROOT = Path(os.environ.get("AGENTOS_REALM_ATTEST_ROOT") or Path(__file__).resolve().parents[1])
 EXPECTED = ROOT / MODULE
 
 
@@ -149,7 +153,10 @@ def runner_identity_is_ubuntu() -> bool | None:
 
 def source_attestation() -> dict:
     state, pid = active_unit_state()
-    expected = sha256(EXPECTED)
+    trusted_hash = os.environ.get("AGENTOS_REALM_ATTEST_EXPECTED_SHA256")
+    if trusted_hash is not None and not re.fullmatch(r"[0-9a-f]{64}", trusted_hash):
+        raise ValueError("trusted source hash must be exact lowercase SHA256")
+    expected = trusted_hash or sha256(EXPECTED)
     listener_pids = public_proc_candidates()
     # A MainPID from a different user manager cannot be treated as the
     # listener identity. Public /proc argv discovery is read-only and bounded.
