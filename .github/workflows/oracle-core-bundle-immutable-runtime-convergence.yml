@@ -100,7 +100,7 @@ jobs:
               "unit_file_not_symlink": not unit.is_symlink(),
               "unit_workdir_mutable": prop("WorkingDirectory") == "/home/ubuntu/agentmanager",
               "unit_text_exact_workdir": source.count(
-                  "WorkingDirectory=/home/ubuntu/agentmanager"
+                  "WorkingDirectory=" + "/home/ubuntu/agentmanager"
               ) == 1,
               "relative_teams_script_in_exec": bool(re.search(
                   r"(?m)^ExecStart=/[^\s]+[\s]+scripts/teams_bridge\.py[\s]*$", source
