@@ -2022,3 +2022,17 @@ The `scripts/converge_teams_immutable_user.sh` one-service controller verifies t
 ## 2026-11-15 — #1682 Teams-only cutover rollback timing correction
 
 Review of the already-merged Teams-only cutover controller (PR #2312) found a genuine recovery gap: the original `changed=1` rollback flag was set *after* the Python unit rewrite completed. If `os.replace()` succeeded but the Python process errored before exit, the unit could have changed without the rollback fence being armed. The narrow follow-up arms the restore flag **before** entering that atomic rewrite and validates on rollback that BOTH the effective systemd WorkingDirectory and live restored process cwd match the previous mutable owner. A merely `active` systemd service no longer produces a false rollback-success message. This repair does not change the intended immutable target, launch additional services, or authorize deployment. Oracle Teams-only `workflow_dispatch` remains required and is not claimed completed.
+
+
+## 2026-11-15 — #1682 GitHub Workflow Dispatch is an EXISTING capability, not a missing subsystem
+
+The current mainline already exposes Runner Window public intent `github.actions/workflow.dispatch` through `agent_core/runner_window.py`, `agentos_node/bootstrap_control.py::ACTION_GITHUB_ACTIONS_DISPATCH` and Oracle `agentos_node/action_relay.py::_github_actions_dispatch`. It already uses trusted relay-side `gh workflow run`, correlates GitHub Run IDs, and distinguishes dispatch acknowledgement from actual workflow terminal success. A direct ChatGPT GitHub connector may still lack a workflow_dispatch write action, but that does NOT mean AgentOS cannot support it through the existing ONE/Runner Window channel.
+
+This follow-up extends the existing bootstrap allowlist and existing Action Relay allowlist for exactly one preapproved target:
+- repository `alston-personal/agentmanager`;
+- workflow `oracle-core-bundle-immutable-runtime-convergence.yml`;
+- ref `main`;
+- **exact** inputs `{"teams_only": "true"}`;
+- required 40-character lowercase expected source commit, existing identity/freshness and Runner Window authorization remain enforced.
+
+Any other Teams ref/inputs, including `teams_only=false`, absence of the input, additional fields, alternate repo or arbitrary workflow, MUST be rejected before invoking `gh`. This is not a generic release or arbitrary-shell grant. Existing `oracle-core-bundle-immutable-runtime-convergence.yml` keeps its separate `workflow_dispatch` operator gate. A dispatch acknowledgement is not a terminal service deployment Receipt; require the workflow to complete successfully, then fresh Oracle live Unit/PID and 10/10 audit, before closing #1682. A mainline code merge alone does NOT imply Oracle has loaded the new bootstrap/relay allowlist. Check the installed generation and execution policy separately, rather than claiming this chat can already invoke live ONE.
