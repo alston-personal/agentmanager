@@ -233,6 +233,14 @@ jobs:
           printf '%s' "$HERMES_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema")=="agentos.hermes-bootstrap-result/v1", d; assert d.get("employee_id")=="hermes-technology-scout", d; assert d.get("assignment_id")=="hermes-2120-discovery-v1", d; assert d.get("employee_state") in ("created","exists"), d; assert d.get("assignment_state") in ("created","preserved"), d; assert d.get("runtime_wake_verified") is False and d.get("continuous_operation_verified") is False, d'
           echo "core_bundle_hermes_bootstrap=PASS"
 
+          # A previously live Teams bridge cannot be preserved in the mutable
+          # checkout when the candidate release omits its implementation.
+          # Fail before installer-side mutations rather than accept false 10/10.
+          if systemctl --user is-active --quiet teams-commander.service &&
+             [ ! -f "$RELEASE/scripts/teams_bridge.py" ]; then
+            echo "core_bundle_teams_immutable_preflight=FAIL_MISSING_BRIDGE"
+            exit 31
+          fi
           echo "core_bundle_install_services=START"
           # Preserve previously accepted ONE S4 delivery authority when both
           # the real Wake Node and its governed Worker Host were active before
@@ -373,7 +381,7 @@ jobs:
           fi
 
           # Actual running processes, not merely unit text, must execute from the immutable release.
-          for unit in os-chronos.service tg-commander.service cat-ink-syncer.service agentos-core-supervisor.service; do
+          for unit in os-chronos.service tg-commander.service teams-commander.service cat-ink-syncer.service agentos-core-supervisor.service; do
             if ! systemctl --user is-active --quiet "$unit"; then
               if grep -Fxq "$unit" "$BACKUP/active-services"; then
                 echo "ERROR: previously active $unit is now unavailable" >&2
@@ -418,6 +426,14 @@ jobs:
             esac
             echo "core_bundle_runtime=$unit:immutable"
           done
+          if systemctl --user is-active --quiet teams-commander.service; then
+            teams_workdir="$(systemctl --user show teams-commander.service -p WorkingDirectory --value)"
+            test "$teams_workdir" = "$RELEASE" || {
+              echo "core_bundle_teams_workdir=FAIL_NOT_IMMUTABLE"
+              exit 30
+            }
+            echo "core_bundle_teams_workdir=EXACT_IMMUTABLE_RELEASE"
+          fi
           if [ ! -f "$WORKER_SYSTEM_MARKER" ] && systemctl --user is-active --quiet agentos-employee-worker-host.service; then
             worker_wd="$(systemctl --user show agentos-employee-worker-host.service -p WorkingDirectory --value)"
             test "$(readlink -f "$worker_wd")" = "$RELEASE" || {

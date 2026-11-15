@@ -190,3 +190,22 @@ def test_active_blue_green_admin_attestation_is_read_only_and_not_a_login_proof(
     assert "session role not attested" in wf.lower()
     assert "git -C \"$REPO\" show \"$SOURCE_SHA:scripts/inspect_dashboard_admin_identity_user.py\"" in wf
     assert "needs: [deploy]" in wf
+
+
+def test_teams_immutable_core_install_contract_fail_closed():
+    """The observed 2026-11-15 Teams drift must not silently pass convergence."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    installer = (root / "scripts/install_systemd_user.sh").read_text(encoding="utf-8")
+    convergence = (
+        root / ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml"
+    ).read_text(encoding="utf-8")
+    assert 'TEAMS_BRIDGE_AVAILABLE=0' in installer
+    assert '[ -f "$LOGIC_ROOT/scripts/teams_bridge.py" ]' in installer
+    assert 'ExecStart=$PYTHON_BIN scripts/teams_bridge.py' in installer
+    assert 'systemctl --user is-active --quiet teams-commander.service' in installer
+    assert 'systemctl --user restart teams-commander.service' in installer
+    assert 'FAIL_MISSING_BRIDGE' in convergence
+    assert 'teams-commander.service cat-ink-syncer.service agentos-core-supervisor.service' in convergence
+    assert 'core_bundle_teams_workdir=EXACT_IMMUTABLE_RELEASE' in convergence
