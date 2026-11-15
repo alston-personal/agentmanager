@@ -8,13 +8,12 @@ name: Oracle Core Bundle Immutable Runtime Convergence
 
 on:
   push:
-    branches: [core/integration, main]
+    branches: [core/integration]
     paths:
       - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
       - '.agent/scripts/agentos-employee-worker-host.service'
       - '.agent/scripts/agentos-employee-worker-host-system.service'
       - 'scripts/install_systemd_user.sh'
-      - 'governance/release-intents/teams-immutable-20261115.json'
       - 'scripts/install_services.py'
       - 'scripts/work_completion.py'
       - 'scripts/issue_work_intake.py'
@@ -43,6 +42,12 @@ on:
       - 'governance/paw-employee.json'
       - 'scripts/bootstrap_product_employees.py'
   workflow_dispatch:
+    inputs:
+      teams_only:
+        description: "Operator-approved exact-main Teams-only cutover (never broad Core)"
+        required: false
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
     paths:
@@ -112,52 +117,10 @@ jobs:
               raise SystemExit(2)
           PY
 
-  teams-release-intent:
-    # Reuse the existing Core release workflow. Main pushes do not run the
-    # legacy whole-bundle controller; only an explicit, single-use intent file
-    # change can authorize the isolated Teams repair.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      deploy: ${{ steps.intent.outputs.deploy }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Verify exact Teams release-intent changed in this push
-        id: intent
-        shell: bash
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          intent=governance/release-intents/teams-immutable-20261115.json
-          test -n "$BEFORE_SHA"
-          git cat-file -e "$BEFORE_SHA^{commit}"
-          test -f "$intent"
-          if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -Fxq "$intent"; then
-            python3 - "$intent" <<'PY'
-          import json, sys
-          data=json.load(open(sys.argv[1],encoding='utf-8'))
-          assert data == {
-              "schema": "agentos.core-teams-immutable-intent/v1",
-              "unit": "teams-commander.service",
-              "scope": "existing-active-service-only",
-              "rollback": "original-unit-and-single-service-restart",
-          }, "unapproved Teams release intent"
-          PY
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-            echo "teams_release_intent=ACCEPTED_EXACT_FILE"
-          else
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "teams_release_intent=NOT_CHANGED"
-          fi
-
   teams-immutable-cutover:
-    needs: teams-release-intent
-    if: needs.teams-release-intent.outputs.deploy == 'true'
+    # An explicit operator workflow_dispatch, from the accepted main ref only.
+    # This cannot be triggered by a main push or an arbitrary PR.
+    if: github.event_name == 'workflow_dispatch' && inputs.teams_only == true && github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 7
     permissions:
@@ -197,7 +160,7 @@ jobs:
           echo "teams_cutover_other_core_units=UNTOUCHED"
 
   converge:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
+    if: (github.event_name == 'workflow_dispatch' && inputs.teams_only != true) || (github.event_name == 'push' && github.ref_name == 'core/integration')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
