@@ -171,6 +171,44 @@ jobs:
                       ).fetchone()[0] if conn.execute(
                           "SELECT 1 FROM sqlite_master WHERE name='runtime_targets'"
                       ).fetchone() else 0
+              # AgentOS config.py loads two env files through setdefault()
+              # after process exec. Report *only* redacted effective booleans.
+              effective = dict(env)
+              sources = [cwd / ".env", Path.home() / ".agentos.secrets"]
+              for source in sources:
+                  try:
+                      lines = source.read_text(encoding="utf-8").splitlines()
+                  except (OSError, UnicodeError):
+                      continue
+                  for raw in lines:
+                      line = raw.strip()
+                      if not line or line.startswith("#") or "=" not in line:
+                          continue
+                      key, value = line.split("=", 1)
+                      key = key.strip()
+                      if key in (
+                          "AGENTOS_GITHUB_DISPATCH_ENABLED",
+                          "AGENTOS_PROVIDER_DISPATCH_ENABLED",
+                          "AGENTOS_GITHUB_TOKEN",
+                          "AGENTOS_GITHUB_REPOSITORY",
+                          "AGENTOS_GITHUB_CAPABILITIES",
+                          "AGENTOS_PROVIDER_BRIDGE_ENDPOINT",
+                          "AGENTOS_PROVIDER_CAPABILITIES",
+                          "AGENTOS_DISPATCH_INTERVAL_SECONDS",
+                      ):
+                          effective.setdefault(key, os.path.expandvars(
+                              value.strip().strip('"').strip("'")
+                          ))
+              is_enabled = lambda key: effective.get(key, "").lower() in ("1", "true", "yes", "on")
+              observed["effective_github_push_enabled"] = is_enabled("AGENTOS_GITHUB_DISPATCH_ENABLED")
+              observed["effective_provider_push_enabled"] = is_enabled("AGENTOS_PROVIDER_DISPATCH_ENABLED")
+              observed["github_transport_prerequisites_present"] = bool(
+                  effective.get("AGENTOS_GITHUB_TOKEN")
+              )
+              observed["provider_endpoint_configured"] = bool(
+                  effective.get("AGENTOS_PROVIDER_BRIDGE_ENDPOINT")
+              )
+              observed["effective_config_is_inferred"] = True
               observed["observer_status"] = "collected"
           except Exception as exc:
               observed["observer_status"] = "unavailable"
