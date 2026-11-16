@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import uuid
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse, parse_qs
 
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
+from .active_continuation import activate_continuation, resolve_active_continuation
 from .canonical_context import CanonicalContextStore
+from .canonical_ir_handoff import advance_canonical_ir
 from .client_auth import ClientPrincipal, ClientTokenStore
 from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
@@ -28,6 +33,10 @@ from .virtual_one_nodes import owner_node_map, owner_approve_code, device_join, 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 CORE_PROTOCOL = "agentos.core/v0.1"
+
+
+class StaleGenerationError(ValueError):
+    """Raised when an IR advance request does not match the active ONE generation."""
 
 
 def validate_bind_security(host: str, token: str | None) -> None:
@@ -252,6 +261,102 @@ class DistributedGatewayService:
             "executor": persisted.get("runtime_id"),
             "evidence": evidence,
             "task": task,
+        }
+
+    def advance_ir(
+        self,
+        body: dict[str, Any],
+        *,
+        data_root: str | Path | None = None,
+        governance_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Advance ONE canonical IR with an observed-generation fence and return a receipt."""
+        if not isinstance(body, dict):
+            raise ValueError("request body must be an object")
+        project_id = str(body.get("project_id") or "").strip()
+        observed_index = str(body.get("observed_index_id") or "").strip()
+        observed_ir = str(body.get("observed_ir_id") or "").strip()
+        if not project_id or not observed_index or not observed_ir:
+            raise ValueError("project_id, observed_index_id, and observed_ir_id are required")
+
+        root = Path(data_root) if data_root is not None else Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+        active = resolve_active_continuation(data_root=root)
+        selector = active.get("selector") if isinstance(active.get("selector"), dict) else {}
+        active_project = str(selector.get("project_id") or "").strip()
+        active_index = str(selector.get("index_id") or "").strip()
+        active_ir = str(selector.get("ir_id") or "").strip()
+        if active_project != project_id or active_index != observed_index or active_ir != observed_ir:
+            raise StaleGenerationError(
+                f"stale_generation: expected {active_project}/{active_index}/{active_ir}, "
+                f"observed {project_id}/{observed_index}/{observed_ir}"
+            )
+
+        current_ir = (
+            active.get("resolution", {})
+            .get("continuation", {})
+            .get("canonical_ir", {})
+        )
+        goal = str(body.get("goal") or current_ir.get("goal") or "").strip()
+        next_action = str(
+            body.get("next_action")
+            or (current_ir.get("continuation") or {}).get("next_action")
+            or (current_ir.get("continuation") or {}).get("recommended_action")
+            or ""
+        ).strip()
+        if not goal or not next_action:
+            raise ValueError("goal and next_action could not be resolved")
+
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        suffix = uuid.uuid4().hex[:8]
+        new_index = f"idx-core-{stamp}-{suffix}"
+        new_ir = f"ir_{stamp}_{suffix}"
+        actor = str(body.get("actor") or "chatgpt-web").strip() or "chatgpt-web"
+        reason = str(body.get("reason") or f"remote-ir-advance:{actor}").strip()
+
+        params: dict[str, Any] = {
+            "project_id": project_id,
+            "expected_index_id": observed_index,
+            "expected_ir_id": observed_ir,
+            "new_index_id": new_index,
+            "new_ir_id": new_ir,
+            "goal": goal,
+            "next_action": next_action,
+            "execution_metadata": {"updated_by": actor},
+        }
+        if "pending_tasks" in body and body["pending_tasks"] is not None:
+            params["pending_tasks"] = body["pending_tasks"]
+        if "decisions_append" in body and body["decisions_append"] is not None:
+            params["decisions_append"] = body["decisions_append"]
+        if "evidence" in body and body["evidence"] is not None:
+            params["evidence"] = body["evidence"]
+
+        gov_path = governance_path
+        if gov_path is None:
+            candidate_gov = root / "governance" / "directory.json"
+            if candidate_gov.exists():
+                gov_path = candidate_gov
+
+        handoff = advance_canonical_ir(params, data_root=root, governance_path=gov_path)
+        activation = activate_continuation(
+            project_id,
+            index_id=new_index,
+            ir_id=new_ir,
+            reason=reason,
+            data_root=root,
+        )
+        return {
+            "schema": "agentos.ir-writeback-receipt/v1",
+            "ok": True,
+            "project_id": project_id,
+            "actor": actor,
+            "previous": handoff["parent"],
+            "current": handoff["child"],
+            "goal": handoff["goal"],
+            "next_action": handoff["next_action"],
+            "evidence_appended": handoff["evidence_appended"],
+            "publish_receipt": handoff["publish_receipt"],
+            "activation": activation,
+            "credential_exposed": False,
         }
 
     def project_state(self, project_id: str) -> dict[str, Any]:
@@ -629,6 +734,10 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             if path == "/v1/ir/submit":
                 if not self._require_root(): return
                 self._json(200, self.server.service.submit(body)); return
+            if path == "/v1/ir/advance":
+                project_id = str(body.get("project_id") or "").strip()
+                if not self._require("ir.advance", project_id=project_id): return
+                self._json(200, self.server.service.advance_ir(body)); return
             if path == "/v1/lease":
                 if not self._require_root(): return
                 self._json(200, self.server.service.lease(body)); return
@@ -641,6 +750,8 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not_found"})
         except KeyError as exc:
             self._json(404, {"error": "not_found", "message": str(exc)})
+        except StaleGenerationError as exc:
+            self._json(409, {"error": "stale_generation", "message": str(exc)})
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json(400, {"error": "invalid_request", "message": str(exc)})
 

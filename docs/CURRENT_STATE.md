@@ -1115,6 +1115,16 @@ The reused `agentos_node/ir_stop_sync.py` now records automatic Stop text only a
 unverified turn evidence while preserving task semantics and execution status.
 Explicit semantic checkpoint changes require the observed project/index/IR tuple;
 missing selectors no longer trigger a guessed Core fallback. The guarded publisher
+
+### Scoped Control Plane ONE IR Advance (`POST /v1/ir/advance`)
+
+`agent_core/distributed_gateway.py` (`DistributedGatewayService.advance_ir`) and
+`agentos_node/control_plane_client.py` (`ControlPlaneClient.advance_ir`) now expose a
+scoped `ir.advance` endpoint guarded by `observed_index_id`/`observed_ir_id`
+generation fencing (`409 stale_generation` on mismatch), resolving the governance
+directory relative to the active `data_root` and returning an
+`agentos.ir-writeback-receipt/v1` receipt after `advance_canonical_ir` +
+`activate_continuation`.
 still validates every write. See [Stop writeback compatibility](IR_STOP_WRITEBACK.md)
 for deployment dependencies, real temporary-store tests, and remaining session-binding
 limits. This does not repair the production active IR or claim platform deployment.

@@ -140,6 +140,41 @@ class ControlPlaneClient:
             payload["target_node_id"] = target_node_id
         return self._request("POST", "/v1/ir/submit", payload)
 
+    def advance_ir(
+        self,
+        project_id: str,
+        *,
+        observed_index_id: str,
+        observed_ir_id: str,
+        next_action: str | None = None,
+        goal: str | None = None,
+        pending_tasks: list[str] | None = None,
+        decisions_append: list[str] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
+        reason: str | None = None,
+        actor: str = "chatgpt-web",
+    ) -> dict[str, Any]:
+        """Advance ONE canonical IR with an observed-generation fence."""
+        payload: dict[str, Any] = {
+            "project_id": project_id,
+            "observed_index_id": observed_index_id,
+            "observed_ir_id": observed_ir_id,
+            "actor": actor,
+        }
+        if next_action is not None:
+            payload["next_action"] = next_action
+        if goal is not None:
+            payload["goal"] = goal
+        if pending_tasks is not None:
+            payload["pending_tasks"] = pending_tasks
+        if decisions_append is not None:
+            payload["decisions_append"] = decisions_append
+        if evidence is not None:
+            payload["evidence"] = evidence
+        if reason is not None:
+            payload["reason"] = reason
+        return self._request("POST", "/v1/ir/advance", payload)
+
     def lease(
         self,
         node_id: str,
