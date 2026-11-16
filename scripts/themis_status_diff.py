@@ -16,6 +16,7 @@ import datetime
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -315,6 +316,27 @@ def format_markdown_report(current: Dict[str, Any], delta: Dict[str, Any]) -> st
     return "\n".join(lines)
 
 
+def validate_authoritative_data_root(data_root: Path) -> None:
+    """Fail closed when executed on a non-Oracle host without authoritative agent-data."""
+    projects_dir = data_root / "projects"
+    governance_dir = data_root / "governance" / "directory.json"
+    if not projects_dir.is_dir():
+        raise ValueError(
+            f"NON_AUTHORITATIVE_DATA_ROOT: missing projects directory under {data_root}; "
+            "dispatch /status-diff to Oracle via scripts/submit_agentos_command.sh instead of scanning local disk."
+        )
+    has_documented = any(
+        (p / "STATUS.md").is_file()
+        for p in projects_dir.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    )
+    if not governance_dir.is_file() and not has_documented:
+        raise ValueError(
+            f"NON_AUTHORITATIVE_DATA_ROOT: {data_root} has no governance/directory.json and 0 documented projects; "
+            "this host is not the Oracle truth center. Dispatch /status-diff to Oracle via scripts/submit_agentos_command.sh."
+        )
+
+
 def run_inventory_diff(
     project_root: Path = AGENTMANAGER_DEFAULT,
     data_root: Path = AGENT_DATA_DEFAULT,
@@ -404,9 +426,19 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON instead of markdown")
     parser.add_argument("--base", type=str, default=None, help="Baseline snapshot (snapshot filename, path, or 'start-of-day')")
     parser.add_argument("--previous", type=int, default=None, help="Compare with Nth snapshot from the end (e.g. 1 for previous snapshot)")
+    parser.add_argument("--allow-non-authoritative", action="store_true", help="Allow running against a non-Oracle local data_root")
     args = parser.parse_args()
 
+    data_root = Path(os.environ.get("AGENT_DATA_ROOT") or AGENT_DATA_DEFAULT)
+    if not args.allow_non_authoritative:
+        try:
+            validate_authoritative_data_root(data_root)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(2)
+
     result, report_md = run_inventory_diff(
+        data_root=data_root,
         save=not args.no_save,
         output_json=args.json,
         base_target=args.base,
