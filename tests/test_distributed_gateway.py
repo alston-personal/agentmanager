@@ -107,13 +107,29 @@ def test_ir_advance_endpoint_enforces_permission_and_generation_fence(tmp_path: 
     gov_dir = data_root / "governance"
     gov_dir.mkdir(parents=True)
     (gov_dir / "directory.json").write_text(json.dumps({
-        "entities": [{
-            "id": "project://agentos-core",
-            "kind": "project",
-            "state": "verified",
-            "canonical_id": "agentos-core",
-            "name": "AgentOS Core",
-        }]
+        "entities": {
+            "project://agentos-core": {
+                "id": "project://agentos-core",
+                "kind": "project",
+                "state": "verified",
+                "canonical_id": "agentos-core",
+                "name": "AgentOS Core",
+                "aliases": ["AgentOS", "AgentOS Core"],
+                "implementation": {
+                    "source": {
+                        "repo": "alston-personal/agentmanager",
+                        "branch": "main",
+                        "canonical_path": str(tmp_path / "agentmanager"),
+                        "node": "oracle-core-node",
+                    }
+                },
+                "metadata": {
+                    "state": {
+                        "continuity": str(proj_dir / "continuity" / "latest.json"),
+                    }
+                },
+            }
+        }
     }), encoding="utf-8")
 
     init_index = "idx-core-20261116T000000Z-init"

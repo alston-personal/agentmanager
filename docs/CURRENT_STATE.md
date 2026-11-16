@@ -1121,7 +1121,8 @@ missing selectors no longer trigger a guessed Core fallback. The guarded publish
 `agent_core/distributed_gateway.py` (`DistributedGatewayService.advance_ir`) and
 `agentos_node/control_plane_client.py` (`ControlPlaneClient.advance_ir`) now expose a
 scoped `ir.advance` endpoint guarded by `observed_index_id`/`observed_ir_id`
-generation fencing (`409 stale_generation` on mismatch) and returning an
+generation fencing (`409 stale_generation` on mismatch), resolving the governance
+directory relative to the active `data_root` and returning an
 `agentos.ir-writeback-receipt/v1` receipt after `advance_canonical_ir` +
 `activate_continuation`.
 still validates every write. See [Stop writeback compatibility](IR_STOP_WRITEBACK.md)

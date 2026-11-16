@@ -330,7 +330,13 @@ class DistributedGatewayService:
         if "evidence" in body and body["evidence"] is not None:
             params["evidence"] = body["evidence"]
 
-        handoff = advance_canonical_ir(params, data_root=root, governance_path=governance_path)
+        gov_path = governance_path
+        if gov_path is None:
+            candidate_gov = root / "governance" / "directory.json"
+            if candidate_gov.exists():
+                gov_path = candidate_gov
+
+        handoff = advance_canonical_ir(params, data_root=root, governance_path=gov_path)
         activation = activate_continuation(
             project_id,
             index_id=new_index,
