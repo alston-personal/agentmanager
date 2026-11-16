@@ -26,6 +26,13 @@ AUTHORITATIVE_DOCS = {
     "docs/CURRENT_STATE.md",
 }
 
+IR_VALIDATION_CONTRACT = {
+    "agent_core/ir_validation.py",
+    "scripts/validate_canonical_ir.py",
+    "tests/test_ir_validation.py",
+    "docs/IR_VALIDATION.md",
+}
+
 # Changes under these surfaces materially alter AgentOS runtime semantics or operations.
 ARCHITECTURE_PREFIXES = (
     "agent_core/",
@@ -154,16 +161,20 @@ def static_errors() -> list[str]:
 
 
 def verify_file_set_coupling(changed: set[str], context_name: str) -> list[str]:
+    ir_errors = []
+    if changed & IR_VALIDATION_CONTRACT and not IR_VALIDATION_CONTRACT <= changed:
+        ir_errors.append(f"[{context_name}] IR validation contract requires validator, CLI, tests and documentation together; missing: "
+                         + ", ".join(sorted(IR_VALIDATION_CONTRACT - changed)))
     architecture = sorted(path for path in changed if is_architecture_path(path))
     if not architecture:
-        return []
+        return ir_errors
     doc_changes = sorted(changed & AUTHORITATIVE_DOCS)
     if doc_changes:
-        return []
+        return ir_errors
     sample = ", ".join(architecture[:8])
     if len(architecture) > 8:
         sample += f", ... (+{len(architecture) - 8})"
-    return [
+    return ir_errors + [
         f"[{context_name}] architecture-sensitive implementation changed without an authoritative documentation update: "
         + sample
     ]
