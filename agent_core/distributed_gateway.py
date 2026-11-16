@@ -228,7 +228,13 @@ class DistributedGatewayService:
         enqueue = body.get("enqueue_continuation")
         if enqueue is not None and not isinstance(enqueue, bool):
             raise ValueError("enqueue_continuation must be boolean or omitted")
-        return self.store.complete_ir(task_id, RemoteRuntimeResult.from_dict(raw_result), enqueue_continuation=enqueue)
+        epoch = body.get("lease_epoch")
+        if type(epoch) is not int or epoch < 1:
+            raise ValueError("LEASE_EPOCH_REQUIRED")
+        return self.store.complete_ir(
+            task_id, RemoteRuntimeResult.from_dict(raw_result),
+            lease_epoch=epoch, enqueue_continuation=enqueue,
+        )
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         return {"task": self.store.get_task(task_id)}

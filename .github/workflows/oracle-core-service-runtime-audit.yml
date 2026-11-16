@@ -65,3 +65,394 @@ jobs:
             exit 1
           fi
           REMOTE
+
+
+  control-plane-readonly:
+    # Separate from the legacy Core ten-unit assertion: one can fail without
+    # suppressing useful read-only Control Plane evidence.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Teams owner and process provenance without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import json, subprocess, time
+          from pathlib import Path
+          unit = "teams-commander.service"
+          def prop(name):
+              try:
+                  return subprocess.check_output(
+                      ["systemctl", "--user", "show", unit, "-p", name, "--value"],
+                      text=True, timeout=5, stderr=subprocess.DEVNULL,
+                  ).strip()
+              except (OSError, subprocess.SubprocessError):
+                  return ""
+          def category(path):
+              if path.startswith("/home/ubuntu/agent-data/releases/core/"):
+                  return "immutable_core_release"
+              if path.startswith("/home/ubuntu/agentmanager"):
+                  return "mutable_checkout"
+              return "other_or_missing"
+          pid_raw = prop("MainPID")
+          try:
+              pid = int(pid_raw)
+          except ValueError:
+              pid = 0
+          cwd = ""
+          if pid > 0:
+              try:
+                  cwd = str(Path(f"/proc/{pid}/cwd").resolve(strict=True))
+              except (OSError, RuntimeError):
+                  pass
+          unit_wd = prop("WorkingDirectory")
+          unit_file = prop("FragmentPath")
+          script_present = False
+          if cwd:
+              script_present = (Path(cwd) / "scripts" / "teams_bridge.py").is_file()
+          observed = {
+              "schema": "agentos.teams-immutable-owner-readonly/v1",
+              "service_state": prop("ActiveState"),
+              "substate": prop("SubState"),
+              "pid_present": pid > 0,
+              "unit_workdir_class": category(unit_wd),
+              "process_cwd_class": category(cwd),
+              "unit_vs_process_cwd_equal": bool(cwd) and cwd == unit_wd,
+              "unit_file_under_user_systemd": unit_file.startswith(
+                  "/home/ubuntu/.config/systemd/user/"
+              ),
+              "teams_script_in_process_cwd": script_present,
+              "systemd_execstart_has_teams_bridge": "teams_bridge.py" in prop("ExecStart"),
+              "systemd_unit_type": prop("Type"),
+              "environment_files_configured": bool(prop("EnvironmentFiles")),
+              "unit_fragment_mtime": (
+                  int(Path(unit_file).stat().st_mtime)
+                  if unit_file and Path(unit_file).is_file() else None
+              ),
+              "mainpid_start_timestamp": None,
+              "read_only": True,
+          }
+          if pid > 0:
+              try:
+                  uptime = float(Path("/proc/uptime").read_text().split()[0])
+                  boot_seconds = time.time() - uptime
+                  clock_ticks = float(subprocess.check_output(
+                      ["getconf", "CLK_TCK"], text=True
+                  ).strip())
+                  raw = Path(f"/proc/{pid}/stat").read_text()
+                  after_comm = raw.rsplit(")", 1)[1].split()
+                  start_ticks = int(after_comm[19])
+                  observed["mainpid_start_timestamp"] = int(
+                      boot_seconds + start_ticks / clock_ticks
+                  )
+              except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                  pass
+          print(json.dumps(observed, sort_keys=True))
+          PY
+      - name: Attest effective Control Plane without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import json, os, sqlite3, subprocess
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          def field(name):
+              try:
+                  return subprocess.check_output(
+                      ["systemctl", "--user", "show", "agentos-control-plane.service",
+                       "-p", name, "--value"], text=True, timeout=5
+                  ).strip()
+              except (OSError, subprocess.SubprocessError):
+                  return ""
+
+          observed = {
+              "schema": "agentos.control-plane-live-readonly/v1",
+              "read_only": True,
+              "service_active": field("ActiveState") == "active",
+              "loaded_process_proven": False,
+              "db_schema_read": False,
+              "transport_ready_proven": False,
+              "sweep_active_proven": False,
+              "old_client_compatibility_proven": False,
+              "rollback_proven": False,
+          }
+          try:
+              pid = int(field("MainPID"))
+              if pid <= 0:
+                  raise ValueError("no-main-pid")
+              cwd = Path(f"/proc/{pid}/cwd").resolve(strict=True)
+              cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(bytes([0]), b" ").decode("utf-8", "replace")
+              env = dict(
+                  item.split("=", 1) for item in
+                  Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split(chr(0))
+                  if "=" in item
+              )
+              observed["entrypoint_matches"] = "scripts.distributed_gateway" in cmdline
+              observed["effective_cwd_matches_unit"] = str(cwd) == field("WorkingDirectory")
+              try:
+                  observed["observed_sha"] = subprocess.check_output(
+                      ["git", "-C", str(cwd), "rev-parse", "HEAD"],
+                      text=True, timeout=5, stderr=subprocess.DEVNULL
+                  ).strip()
+              except (OSError, subprocess.SubprocessError):
+                  observed["observed_sha"] = None
+              observed["loaded_process_proven"] = (
+                  observed["entrypoint_matches"]
+                  and observed["effective_cwd_matches_unit"]
+                  and bool(observed["observed_sha"])
+              )
+              observed["github_push_enabled"] = env.get("AGENTOS_GITHUB_DISPATCH_ENABLED", "").lower() in ("1", "true", "yes", "on")
+              observed["provider_push_enabled"] = env.get("AGENTOS_PROVIDER_DISPATCH_ENABLED", "").lower() in ("1", "true", "yes", "on")
+              observed["configured_interval_positive"] = (
+                  float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")) > 0
+              )
+              # Constructor-loaded .env files may differ from /proc environ.
+              # Runtime target registration and an active sweep thread must be
+              # separately attested; don't turn booleans into false proof.
+              observed["db_path_authoritative"] = bool(env.get("AGENTOS_CONTROL_PLANE_DB"))
+              db_path = Path(env["AGENTOS_CONTROL_PLANE_DB"]) if observed["db_path_authoritative"] else (
+                  Path(env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data"))
+                  / "runtime" / "control-plane.sqlite3"
+              )
+              if db_path.is_file():
+                  from urllib.parse import quote
+                  uri = "file:" + quote(str(db_path.resolve()), safe="/") + "?mode=ro"
+                  with sqlite3.connect(uri, uri=True, timeout=5) as conn:
+                      conn.execute("PRAGMA query_only=ON")
+                      cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+                      observed["db_schema_read"] = True
+                      observed["lease_epoch_column"] = "lease_epoch" in cols
+                      observed["task_count"] = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+                      observed["submitted_count"] = conn.execute(
+                          "SELECT COUNT(*) FROM tasks WHERE status='submitted'"
+                      ).fetchone()[0]
+                      observed["leased_count"] = conn.execute(
+                          "SELECT COUNT(*) FROM tasks WHERE status='leased'"
+                      ).fetchone()[0]
+                      observed["push_target_count"] = conn.execute(
+                          "SELECT COUNT(*) FROM runtime_targets WHERE enabled=1"
+                      ).fetchone()[0] if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='runtime_targets'"
+                      ).fetchone() else 0
+              # Read-only backlog/target inventory; only aggregate counts
+              # are returned, never task IDs, project names, capabilities,
+              # target names, payloads, endpoints or credentials.
+              if observed.get("db_schema_read"):
+                  with sqlite3.connect(uri, uri=True, timeout=5) as conn:
+                      conn.execute("PRAGMA query_only=ON")
+                      target_rows = conn.execute(
+                          "SELECT target_id, target_kind, capabilities_json, enabled "
+                          "FROM runtime_targets"
+                      ).fetchall() if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='runtime_targets'"
+                      ).fetchone() else []
+                      targets = {
+                          row[0]: (str(row[1]), bool(row[3]))
+                          for row in target_rows
+                      }
+                      observed["target_kind_counts"] = {
+                          kind: sum(1 for t in targets.values()
+                                    if t[0] == kind and t[1])
+                          for kind in sorted({t[0] for t in targets.values() if t[1]})
+                          if kind in ("github_actions", "webhook")
+                      }
+                      categories = {
+                          "canonical_ir_target_enabled": 0,
+                          "canonical_ir_target_disabled_or_unknown": 0,
+                          "canonical_ir_untargeted": 0,
+                          "non_ir_targeted": 0,
+                          "non_ir_untargeted": 0,
+                          "unparseable_payload": 0,
+                      }
+                      for target_id, payload_raw in conn.execute(
+                          "SELECT target_node_id, payload_json FROM tasks "
+                          "WHERE status='submitted'"
+                      ):
+                          try:
+                              payload = json.loads(payload_raw)
+                          except (TypeError, ValueError):
+                              categories["unparseable_payload"] += 1
+                              continue
+                          is_ir = isinstance(payload, dict) and (
+                              payload.get("protocol") == "agentos.distributed-task/v1"
+                          )
+                          if not is_ir:
+                              categories["non_ir_targeted" if target_id
+                                         else "non_ir_untargeted"] += 1
+                          elif not target_id:
+                              categories["canonical_ir_untargeted"] += 1
+                          elif targets.get(target_id, ("", False))[1]:
+                              categories["canonical_ir_target_enabled"] += 1
+                          else:
+                              categories["canonical_ir_target_disabled_or_unknown"] += 1
+                      observed["submitted_task_classes"] = categories
+                      observed["submitted_inventory_reconciles"] = (
+                          sum(categories.values()) == observed["submitted_count"]
+                      )
+                      # Mirror the non-mutating *choice* criteria in the
+                      # installed RuntimeDispatcher; do not wake any target.
+                      online_caps = set()
+                      if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='nodes'"
+                      ).fetchone():
+                          for (manifest_raw,) in conn.execute(
+                              "SELECT manifest_json FROM nodes WHERE status='online'"
+                          ):
+                              try:
+                                  manifest = json.loads(manifest_raw)
+                                  for item in manifest.get("spec", {}).get("capabilities", []):
+                                      if isinstance(item, dict) and isinstance(item.get("name"), str):
+                                          online_caps.add(item["name"])
+                              except (TypeError, ValueError, AttributeError):
+                                  pass
+                      push_target_caps = []
+                      for target_name, kind, caps_raw, enabled in target_rows:
+                          if not enabled or kind not in ("github_actions", "webhook"):
+                              continue
+                          try:
+                              caps = json.loads(caps_raw)
+                              if isinstance(caps, list):
+                                  push_target_caps.append((target_name, kind, set(
+                                      c for c in caps if isinstance(c, str)
+                                  )))
+                          except (TypeError, ValueError):
+                              pass
+                      missing_runtime_reasons = {
+                          "no_registered_push_capability": 0,
+                          "excluded_by_runtime_policy": 0,
+                      }
+                      submitted_capabilities = set()
+                      dispatch_classes = {
+                          "waiting_for_online_pull": 0,
+                          "eligible_push_by_capability": 0,
+                          "no_matching_runtime": 0,
+                          "targeted_or_non_ir_excluded": 0,
+                          "malformed_ir": 0,
+                      }
+                      for target_id, capability, raw in conn.execute(
+                          "SELECT target_node_id, capability, payload_json "
+                          "FROM tasks WHERE status='submitted'"
+                      ):
+                          try:
+                              payload = json.loads(raw)
+                              if not isinstance(payload, dict) or (
+                                  payload.get("protocol") != "agentos.distributed-task/v1"
+                              ):
+                                  dispatch_classes["targeted_or_non_ir_excluded"] += 1
+                                  continue
+                              if target_id:
+                                  dispatch_classes["targeted_or_non_ir_excluded"] += 1
+                                  continue
+                              ir = payload.get("canonical_ir")
+                              if not isinstance(ir, dict):
+                                  dispatch_classes["malformed_ir"] += 1
+                                  continue
+                              context = ir.get("context")
+                              policy = (context.get("runtime_policy")
+                                        if isinstance(context, dict) else None)
+                              policy = policy if isinstance(policy, dict) else {}
+                              submitted_capabilities.add(capability)
+                              prefer_push = bool(policy.get("prefer_push"))
+                              if capability in online_caps and not prefer_push:
+                                  dispatch_classes["waiting_for_online_pull"] += 1
+                                  continue
+                              deny = policy.get("deny_targets") or []
+                              allowed = policy.get("allowed_kinds")
+                              # Names of denied targets intentionally never leave host.
+                              choices = [
+                                  kind for target_name, kind, caps in push_target_caps
+                                  if capability in caps
+                                  and target_name not in deny
+                                  and (not isinstance(allowed, list) or kind in allowed)
+                              ]
+                              if choices:
+                                  dispatch_classes["eligible_push_by_capability"] += 1
+                              else:
+                                  dispatch_classes["no_matching_runtime"] += 1
+                                  reason = (
+                                      "excluded_by_runtime_policy"
+                                      if any(capability in caps
+                                             for _, _, caps in push_target_caps)
+                                      else "no_registered_push_capability"
+                                  )
+                                  missing_runtime_reasons[reason] += 1
+                          except (ValueError, TypeError, AttributeError):
+                              dispatch_classes["malformed_ir"] += 1
+                      observed["submitted_distinct_capability_count"] = len(submitted_capabilities)
+                      observed["missing_runtime_reasons"] = missing_runtime_reasons
+                      observed["dispatch_choice_classes"] = dispatch_classes
+                      observed["dispatch_choice_reconciles"] = (
+                          sum(dispatch_classes.values()) == observed["submitted_count"]
+                      )
+                      observed["dispatch_choice_is_static_inference"] = True
+                      observed["dispatch_state_counts"] = {}
+                      if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='runtime_dispatches'"
+                      ).fetchone():
+                          for state, count in conn.execute(
+                              "SELECT status, COUNT(*) FROM runtime_dispatches GROUP BY status"
+                          ):
+                              if state in ("dispatching", "dispatched", "failed"):
+                                  observed["dispatch_state_counts"][state] = count
+              # AgentOS config.py loads two env files through setdefault()
+              # after process exec. Report *only* redacted effective booleans.
+              effective = dict(env)
+              sources = [cwd / ".env", Path.home() / ".agentos.secrets"]
+              for source in sources:
+                  try:
+                      lines = source.read_text(encoding="utf-8").splitlines()
+                  except (OSError, UnicodeError):
+                      continue
+                  for raw in lines:
+                      line = raw.strip()
+                      if not line or line.startswith("#") or "=" not in line:
+                          continue
+                      key, value = line.split("=", 1)
+                      key = key.strip()
+                      if key in (
+                          "AGENTOS_GITHUB_DISPATCH_ENABLED",
+                          "AGENTOS_PROVIDER_DISPATCH_ENABLED",
+                          "AGENTOS_GITHUB_TOKEN",
+                          "AGENTOS_GITHUB_REPOSITORY",
+                          "AGENTOS_GITHUB_CAPABILITIES",
+                          "AGENTOS_PROVIDER_BRIDGE_ENDPOINT",
+                          "AGENTOS_PROVIDER_CAPABILITIES",
+                          "AGENTOS_DISPATCH_INTERVAL_SECONDS",
+                      ):
+                          effective.setdefault(key, os.path.expandvars(
+                              value.strip().strip('"').strip("'")
+                          ))
+              is_enabled = lambda key: effective.get(key, "").lower() in ("1", "true", "yes", "on")
+              observed["effective_github_push_enabled"] = is_enabled("AGENTOS_GITHUB_DISPATCH_ENABLED")
+              observed["effective_provider_push_enabled"] = is_enabled("AGENTOS_PROVIDER_DISPATCH_ENABLED")
+              observed["github_transport_prerequisites_present"] = bool(
+                  effective.get("AGENTOS_GITHUB_TOKEN")
+              )
+              observed["provider_endpoint_configured"] = bool(
+                  effective.get("AGENTOS_PROVIDER_BRIDGE_ENDPOINT")
+              )
+              observed["effective_config_is_inferred"] = True
+              observed["observer_status"] = "collected"
+          except Exception as exc:
+              observed["observer_status"] = "unavailable"
+              observed["error_type"] = type(exc).__name__
+          observed["observed_at"] = datetime.now(timezone.utc).isoformat()
+          print(json.dumps(observed, sort_keys=True))
+          if observed["observer_status"] != "collected":
+              raise SystemExit(2)
+          PY

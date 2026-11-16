@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from agent_core.distributed_control_plane import DistributedControlPlane
+from agent_core.canonical_context import CanonicalContextStore
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import ExecutionOutcome, RemoteRuntimeWorker
 
@@ -35,7 +36,7 @@ def test_ir_task_lease_result_and_auto_continuation(tmp_path: Path):
         ),
     )
     runtime_result = worker.execute(lease.ir)
-    completed = store.complete_ir(lease.task_id, runtime_result)
+    completed = store.complete_ir(lease.task_id, runtime_result, lease_epoch=lease.lease_epoch)
 
     assert completed["task"]["status"] == "succeeded"
     assert completed["continuationBlocked"] is None
@@ -66,7 +67,7 @@ def test_runtime_result_must_match_leased_ir(tmp_path: Path):
     result.input_digest = "tampered"
 
     with pytest.raises(ValueError, match="input_digest"):
-        store.complete_ir(lease.task_id, result)
+        store.complete_ir(lease.task_id, result, lease_epoch=lease.lease_epoch)
 
     assert store.get_task(lease.task_id)["status"] == "leased"
 
@@ -88,7 +89,7 @@ def test_auto_continuation_has_hop_limit(tmp_path: Path):
         "loop.step",
         lambda current: ExecutionOutcome(result={"ok": True}, auto_continue=True),
     )
-    completed = store.complete_ir(lease.task_id, worker.execute(lease.ir))
+    completed = store.complete_ir(lease.task_id, worker.execute(lease.ir), lease_epoch=lease.lease_epoch)
 
     assert completed["task"]["status"] == "succeeded"
     assert completed["enqueuedTask"] is None
@@ -114,11 +115,209 @@ def test_expired_lease_is_requeued_and_stale_worker_is_fenced(tmp_path: Path):
 
     old_worker = RemoteRuntimeWorker("worker-old")
     old_worker.register("recover.step", lambda current: {"worker": "old"})
-    with pytest.raises(ValueError, match="lease owner"):
-        store.complete_ir(first_lease.task_id, old_worker.execute(first_lease.ir))
+    with pytest.raises(ValueError, match="STALE_LEASE_EPOCH"):
+        store.complete_ir(first_lease.task_id, old_worker.execute(first_lease.ir), lease_epoch=first_lease.lease_epoch)
 
     new_worker = RemoteRuntimeWorker("worker-new")
     new_worker.register("recover.step", lambda current: {"worker": "new"})
-    completed = store.complete_ir(second_lease.task_id, new_worker.execute(second_lease.ir))
+    completed = store.complete_ir(second_lease.task_id, new_worker.execute(second_lease.ir), lease_epoch=second_lease.lease_epoch)
     assert completed["task"]["status"] == "succeeded"
     assert completed["task"]["result"]["runtime_id"] == "worker-new"
+
+
+def test_expired_same_node_attempt_cannot_commit_after_reclaim(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "same-node.sqlite3")
+    ir = CanonicalIR(goal="fence reincarnated worker", project_id="agentmanager", capability="recover.step")
+    store.submit_ir(ir)
+    old = store.lease_next_ir("worker-a", ["recover.step"])
+    assert old is not None and old.lease_epoch == 1
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_until='2000-01-01T00:00:00Z' WHERE task_id=?",
+            (old.task_id,),
+        )
+    new = store.lease_next_ir("worker-a", ["recover.step"])
+    assert new is not None and new.lease_epoch == old.lease_epoch + 1
+    worker = RemoteRuntimeWorker("worker-a")
+    worker.register("recover.step", lambda current: {"ok": True})
+    result = worker.execute(ir)
+    with pytest.raises(ValueError, match="STALE_LEASE_EPOCH"):
+        store.complete_ir(old.task_id, result, lease_epoch=old.lease_epoch)
+    assert store.get_task(old.task_id)["status"] == "leased"
+    completed = store.complete_ir(new.task_id, result, lease_epoch=new.lease_epoch)
+    assert completed["task"]["status"] == "succeeded"
+    with pytest.raises(ValueError):
+        store.complete_ir(new.task_id, result, lease_epoch=new.lease_epoch)
+
+
+def test_missing_epoch_fails_closed_before_mutation(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "missing-epoch.sqlite3")
+    ir = CanonicalIR(goal="typed lease required", project_id="agentmanager", capability="work")
+    store.submit_ir(ir)
+    lease = store.lease_next_ir("worker-a", ["work"])
+    assert lease
+    worker = RemoteRuntimeWorker("worker-a")
+    worker.register("work", lambda current: {"ok": True})
+    with pytest.raises(ValueError, match="LEASE_EPOCH_REQUIRED"):
+        store.complete_ir(lease.task_id, worker.execute(ir))
+    assert store.get_task(lease.task_id)["status"] == "leased"
+
+
+def test_existing_sqlite_tasks_gain_lease_epoch_without_reset(tmp_path: Path):
+    import sqlite3
+    path = tmp_path / "legacy.sqlite3"
+    store = DistributedControlPlane(path)
+    ir = CanonicalIR(goal="migrate existing tasks", project_id="agentmanager", capability="migrate")
+    task = store.submit_ir(ir)
+    with sqlite3.connect(path) as db:
+        db.execute("ALTER TABLE tasks RENAME TO tasks_current")
+        db.execute("""CREATE TABLE tasks AS
+            SELECT task_id, idempotency_key, capability, payload_json, project_id,
+                   target_node_id, status, lease_until, result_json, created_at, updated_at
+            FROM tasks_current""")
+        db.execute("DROP TABLE tasks_current")
+    reopened = DistributedControlPlane(path)
+    assert reopened.get_task(task["taskId"])["leaseEpoch"] == 0
+    lease = reopened.lease_next_ir("worker-a", ["migrate"])
+    assert lease is not None and lease.lease_epoch == 1
+
+
+def test_context_checkpoint_and_terminal_cas_rollback_together(tmp_path: Path, monkeypatch):
+    path = tmp_path / "checkpoint-atomic.sqlite3"
+    store = DistributedControlPlane(path)
+    context = CanonicalContextStore(path)
+    context.seed("agentmanager", {
+        "active_work": {"next_actions": ["verify"], "current_findings": []},
+    })
+    ir = CanonicalIR(
+        goal="checkpoint only after fenced completion",
+        project_id="agentmanager", capability="agentos.context.checkpoint",
+    )
+    store.submit_ir(ir)
+    lease = store.lease_next_ir("worker-a", ["agentos.context.checkpoint"])
+    assert lease is not None
+    worker = RemoteRuntimeWorker("worker-a")
+    worker.register("agentos.context.checkpoint", lambda current: {
+        "context_checkpoint": {
+            "completed_action": "verify",
+            "finding": "verified",
+            "next_action": "deploy",
+        },
+    })
+    receipt = worker.execute(ir)
+
+    def fail_final_cas(*args, **kwargs):
+        raise ValueError("synthetic_terminal_cas_failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "update_task", fail_final_cas)
+        with pytest.raises(ValueError, match="synthetic_terminal_cas_failure"):
+            store.complete_ir(lease.task_id, receipt, lease_epoch=lease.lease_epoch)
+
+    after_failure = context.load("agentmanager")
+    assert after_failure is not None
+    assert after_failure["_runtime_context"]["revision"] == 1
+    assert after_failure["active_work"]["next_actions"] == ["verify"]
+    assert store.get_task(lease.task_id)["status"] == "leased"
+
+    completed = store.complete_ir(lease.task_id, receipt, lease_epoch=lease.lease_epoch)
+    assert completed["task"]["status"] == "succeeded"
+    assert completed["contextCheckpoint"]["revision"] == 2
+    after_success = context.load("agentmanager")
+    assert after_success is not None
+    assert after_success["active_work"]["next_actions"] == ["deploy"]
+
+
+def test_continuation_insert_failure_rolls_back_parent_and_context(tmp_path: Path, monkeypatch):
+    path = tmp_path / "continuation-atomic.sqlite3"
+    store = DistributedControlPlane(path)
+    context = CanonicalContextStore(path)
+    context.seed("agentmanager", {
+        "active_work": {"next_actions": ["verify"], "current_findings": []},
+    })
+    ir = CanonicalIR(
+        goal="checkpoint and continue atomically",
+        project_id="agentmanager", capability="agentos.context.checkpoint",
+    )
+    store.submit_ir(ir)
+    lease = store.lease_next_ir("worker-a", ["agentos.context.checkpoint"])
+    assert lease
+    worker = RemoteRuntimeWorker("worker-a")
+    worker.register(
+        "agentos.context.checkpoint",
+        lambda current: ExecutionOutcome(
+            result={"context_checkpoint": {
+                "completed_action": "verify",
+                "finding": "checked",
+                "next_action": "deploy",
+            }},
+            next_capability="next.step",
+            auto_continue=True,
+        ),
+    )
+    result = worker.execute(ir)
+    original = store.submit_ir
+
+    def broken_child(child_ir, **kwargs):
+        if kwargs.get("connection") is not None:
+            raise ValueError("synthetic_continuation_failure")
+        return original(child_ir, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "submit_ir", broken_child)
+        with pytest.raises(ValueError, match="synthetic_continuation_failure"):
+            store.complete_ir(lease.task_id, result, lease_epoch=lease.lease_epoch)
+
+    assert store.get_task(lease.task_id)["status"] == "leased"
+    snapshot = context.load("agentmanager")
+    assert snapshot["_runtime_context"]["revision"] == 1
+    assert snapshot["active_work"]["next_actions"] == ["verify"]
+    completed = store.complete_ir(lease.task_id, result, lease_epoch=lease.lease_epoch)
+    assert completed["task"]["status"] == "succeeded"
+    assert completed["enqueuedTask"] is not None
+    assert context.load("agentmanager")["_runtime_context"]["revision"] == 2
+
+
+def test_lease_epoch_readonly_preflight_never_migrates_legacy_db(tmp_path: Path):
+    """Source inventory is strictly read-only, including on pre-upgrade DBs."""
+    import sqlite3
+
+    from scripts.inspect_control_plane_lease_readonly import inspect
+
+    db_path = tmp_path / "preupgrade.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        db.execute("CREATE TABLE tasks (task_id TEXT PRIMARY KEY, status TEXT, lease_until TEXT)")
+        db.execute(
+            "INSERT INTO tasks VALUES ('legacy-task', 'leased', '2000-01-01T00:00:00Z')"
+        )
+    result = inspect(db_path)
+    assert result["database_exists"] is True
+    assert result["schema_ready"] is False
+    assert result["migration_required"] is True
+    assert result["expired_in_flight"] == 1
+    assert result["loaded_process_proven"] is False
+    with sqlite3.connect(db_path) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(tasks)")}
+        assert "lease_epoch" not in columns
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+
+
+def test_lease_epoch_readonly_preflight_aggregates_without_task_identifiers(tmp_path: Path):
+    from scripts.inspect_control_plane_lease_readonly import inspect
+
+    db_path = tmp_path / "postupgrade.sqlite3"
+    store = DistributedControlPlane(db_path)
+    task = store.submit_ir(CanonicalIR(
+        goal="private-goal-that-must-not-leak",
+        project_id="private-project",
+        capability="agent.step",
+    ))
+    lease = store.lease_next_ir("private-worker", ["agent.step"])
+    assert lease is not None and lease.lease_epoch == 1
+    observed = inspect(db_path)
+    assert observed["schema_ready"] is True
+    assert observed["tasks_by_status"] == {"leased": 1}
+    assert observed["active_missing_epoch_or_invalid_deadline"] == 0
+    assert observed["rollback_fencing_proven"] is False
+    assert "private-" not in str(observed)
+    assert store.get_task(task["taskId"])["status"] == "leased"

@@ -192,6 +192,21 @@ def test_active_blue_green_admin_attestation_is_read_only_and_not_a_login_proof(
     assert "needs: [deploy]" in wf
 
 
+def test_oracle_readonly_control_plane_audit_parses_proc_nul_and_redacts_owners():
+    """Prevent the earlier escaped-NUL bug that misclassified push switches."""
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] /
+              ".github/workflows/oracle-core-service-runtime-audit.yml"
+              ).read_text(encoding="utf-8")
+    assert 'replace(bytes([0]), b" ")' in source
+    assert '.split(chr(0))' in source
+    assert 'target_kind_counts' in source
+    assert 'submitted_task_classes' in source
+    assert 'submitted_inventory_reconciles' in source
+    assert 'PRAGMA query_only=ON' in source
+    assert 'service restart' not in source.split("  control-plane-readonly:", 1)[1].lower()
+
+
 def test_teams_immutable_core_install_contract_fail_closed():
     """The observed 2026-11-15 Teams drift must not silently pass convergence."""
     from pathlib import Path
@@ -209,8 +224,6 @@ def test_teams_immutable_core_install_contract_fail_closed():
     assert 'FAIL_MISSING_BRIDGE' in convergence
     assert 'teams-commander.service cat-ink-syncer.service agentos-core-supervisor.service' in convergence
     assert 'core_bundle_teams_workdir=EXACT_IMMUTABLE_RELEASE' in convergence
-
-
 def test_teams_live_cutover_is_scoped_fail_closed_and_shell_valid():
     from pathlib import Path
     import subprocess

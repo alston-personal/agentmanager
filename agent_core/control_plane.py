@@ -67,6 +67,7 @@ class ControlPlaneStore:
                     target_node_id TEXT,
                     status TEXT NOT NULL,
                     lease_until TEXT,
+                    lease_epoch INTEGER NOT NULL DEFAULT 0,
                     result_json TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -75,6 +76,10 @@ class ControlPlaneStore:
                     ON tasks(status, capability);
                 """
             )
+            # Upgrade existing SQLite databases without resetting task/lease history.
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(tasks)")}
+            if "lease_epoch" not in columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN lease_epoch INTEGER NOT NULL DEFAULT 0")
 
     def register_node(self, manifest: dict[str, Any]) -> dict[str, Any]:
         if manifest.get("apiVersion") != "agentos/v1" or manifest.get("kind") != "Node":
@@ -162,36 +167,38 @@ class ControlPlaneStore:
         idempotency_key: str,
         project_id: str | None = None,
         target_node_id: str | None = None,
+        *,
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
         if not capability or not idempotency_key:
             raise ValueError("capability and idempotency_key are required")
+        if connection is None:
+            with self._connect() as owned:
+                return self.submit_task(
+                    capability, payload, idempotency_key, project_id,
+                    target_node_id, connection=owned,
+                )
         now = _timestamp(_now())
+        existing = connection.execute(
+            "SELECT * FROM tasks WHERE idempotency_key=?", (idempotency_key,)
+        ).fetchone()
+        if existing:
+            return self._task_from_row(existing)
         task_id = f"task_{uuid.uuid4().hex}"
-        with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT * FROM tasks WHERE idempotency_key=?", (idempotency_key,)
-            ).fetchone()
-            if existing:
-                return self._task_from_row(existing)
-            connection.execute(
-                """
-                INSERT INTO tasks(
-                    task_id, idempotency_key, capability, payload_json,
-                    project_id, target_node_id, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)
-                """,
-                (
-                    task_id,
-                    idempotency_key,
-                    capability,
-                    json.dumps(payload, sort_keys=True),
-                    project_id,
-                    target_node_id,
-                    now,
-                    now,
-                ),
-            )
-            row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        connection.execute(
+            """
+            INSERT INTO tasks(
+                task_id, idempotency_key, capability, payload_json,
+                project_id, target_node_id, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)
+            """,
+            (
+                task_id, idempotency_key, capability,
+                json.dumps(payload, sort_keys=True), project_id,
+                target_node_id, now, now,
+            ),
+        )
+        row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_from_row(row)
 
     def lease_next_task(
@@ -225,7 +232,8 @@ class ControlPlaneStore:
             connection.execute(
                 """
                 UPDATE tasks
-                SET status='leased', target_node_id=?, lease_until=?, updated_at=?
+                SET status='leased', target_node_id=?, lease_until=?,
+                    lease_epoch=lease_epoch+1, updated_at=?
                 WHERE task_id=? AND status='submitted'
                 """,
                 (node_id, lease_until, updated, row["task_id"]),
@@ -239,11 +247,40 @@ class ControlPlaneStore:
         task_id: str,
         status: str,
         result: dict[str, Any] | None = None,
+        *,
+        expected_lease_epoch: int | None = None,
+        expected_lease_owner: str | None = None,
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
         if status not in TASK_STATES:
             raise ValueError(f"unsupported task state: {status}")
         now = _timestamp(_now())
-        with self._connect() as connection:
+        if connection is None:
+            with self._connect() as owned:
+                return self.update_task(
+                    task_id, status, result,
+                    expected_lease_epoch=expected_lease_epoch,
+                    expected_lease_owner=expected_lease_owner,
+                    connection=owned,
+                )
+        if expected_lease_epoch is not None:
+            if (type(expected_lease_epoch) is not int or expected_lease_epoch < 1
+                    or not expected_lease_owner):
+                raise ValueError("invalid_lease_fence")
+            # Terminal writes must belong to the exact live lease attempt.
+            # A stale worker with the same node ID must not replace new work.
+            cursor = connection.execute(
+                """
+                UPDATE tasks SET status=?, result_json=?, updated_at=?
+                WHERE task_id=? AND lease_epoch=? AND target_node_id=?
+                  AND status IN ('leased', 'running') AND lease_until>=?
+                """,
+                (status, json.dumps(result or {}, sort_keys=True), now,
+                 task_id, expected_lease_epoch, expected_lease_owner, now),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("STALE_LEASE_EPOCH")
+        else:
             cursor = connection.execute(
                 """
                 UPDATE tasks SET status=?, result_json=?, updated_at=?
@@ -253,7 +290,7 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"unknown task: {task_id}")
-            row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_from_row(row)
 
     @staticmethod
@@ -267,6 +304,7 @@ class ControlPlaneStore:
             "targetNodeId": row["target_node_id"],
             "status": row["status"],
             "leaseUntil": row["lease_until"],
+            "leaseEpoch": row["lease_epoch"],
             "result": json.loads(row["result_json"]) if row["result_json"] else None,
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],

@@ -220,3 +220,107 @@ def test_failed_dispatch_uses_retry_backoff(tmp_path: Path):
     assert second["status"] == "retry_wait"
     assert second["dispatchId"] == first["dispatchId"]
     assert transport.calls == 1
+
+
+def test_dispatch_sweep_survives_transient_store_error_without_leaking_details(
+    tmp_path, caplog, monkeypatch,
+):
+    """A one-off DB failure cannot permanently strand pending continuations."""
+    import logging
+
+    from agent_core.distributed_control_plane import DistributedControlPlane
+    from agent_core.runtime_dispatcher import RuntimeDispatcher
+
+    dispatcher = RuntimeDispatcher(DistributedControlPlane(tmp_path / "sweep.sqlite3"))
+    calls = []
+
+    def flaky_dispatch(*, limit):
+        calls.append(limit)
+        if len(calls) == 1:
+            raise RuntimeError("private-webhook-token-do-not-log")
+        return []
+
+    monkeypatch.setattr(dispatcher, "dispatch_pending", flaky_dispatch)
+
+    class ThreeCycles:
+        def __init__(self):
+            self.waits = 0
+
+        def is_set(self):
+            return self.waits >= 3
+
+        def wait(self, interval):
+            assert interval == 0.01
+            self.waits += 1
+
+    with caplog.at_level(logging.INFO):
+        dispatcher.run_sweep_loop(ThreeCycles(), interval_seconds=0.01, limit=9)
+
+    assert calls == [9, 9, 9]
+    assert "runtime dispatch sweep failed (RuntimeError); retrying" in caplog.text
+    assert "runtime dispatch sweep recovered" in caplog.text
+    assert "private-webhook-token-do-not-log" not in caplog.text
+
+
+def test_failed_executor_does_not_stop_two_unaffected_task_receipts(tmp_path: Path):
+    """Isolation: one failing push target must not stop other eligible work."""
+    from runtime_core.remote_runtime import RemoteRuntimeWorker
+
+    store = DistributedControlPlane(tmp_path / "isolated-failure.sqlite3")
+    dispatcher = RuntimeDispatcher(store, dispatch_retry_seconds=60)
+    failed = FailingTransport()
+    healthy = FakeTransport()
+    dispatcher.register_transport(failed)
+    dispatcher.register_transport(healthy)
+    dispatcher.register_target(RuntimeTarget(
+        target_id="broken-executor", kind="failing", capabilities=("broken.step",),
+    ))
+    dispatcher.register_target(RuntimeTarget(
+        target_id="healthy-executor", kind="fake", capabilities=("healthy.step",),
+    ))
+
+    blocked = store.submit_ir(CanonicalIR(
+        goal="isolated unavailable capability", project_id="agentmanager",
+        capability="broken.step",
+    ))
+    good = [
+        store.submit_ir(CanonicalIR(
+            goal=f"continue independent job {i}", project_id="agentmanager",
+            capability="healthy.step", payload={"sequence": i},
+        ))
+        for i in (1, 2)
+    ]
+
+    first_sweep = dispatcher.dispatch_pending()
+    by_task = {item["taskId"]: item for item in first_sweep}
+    assert by_task[blocked["taskId"]]["status"] == "failed"
+    for task in good:
+        assert by_task[task["taskId"]]["status"] == "dispatched"
+    assert failed.calls == 1
+    assert {call["task_id"] for call in healthy.calls} == {
+        task["taskId"] for task in good
+    }
+
+    worker = RemoteRuntimeWorker("healthy-executor")
+    worker.register("healthy.step", lambda current: {"sequence": current.payload["sequence"]})
+    completed_ids = []
+    for task in good:
+        lease = store.lease_ir_task(task["taskId"], "healthy-executor")
+        assert lease is not None
+        result = worker.execute(lease.ir)
+        completed = store.complete_ir(
+            task["taskId"], result, lease_epoch=lease.lease_epoch,
+        )
+        assert completed["task"]["status"] == "succeeded"
+        completed_ids.append(completed["task"]["taskId"])
+    assert len(set(completed_ids)) == 2
+    assert store.get_task(blocked["taskId"])["status"] == "submitted"
+
+    # Failure backoff is scoped to the failed task; it cannot resurrect or
+    # suppress completed independent work.
+    second_sweep = dispatcher.dispatch_pending()
+    assert len(second_sweep) == 1
+    assert second_sweep[0]["taskId"] == blocked["taskId"]
+    assert second_sweep[0]["status"] == "retry_wait"
+    assert failed.calls == 1
+    assert len(healthy.calls) == 2

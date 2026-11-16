@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
@@ -650,6 +651,9 @@ class RuntimeDispatcher:
     def dispatch_pending(self, *, limit: int = 20) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be >= 1")
+        # Recover push leases even when no Executor is polling for another
+        # lease. The store serializes expiry against concurrent fresh claims.
+        self.store.requeue_expired_ir_leases()
         results = []
         for task_id in self._submitted_task_ids(limit):
             try:
@@ -673,6 +677,22 @@ class RuntimeDispatcher:
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("interval_seconds must be > 0")
+        failure_reported = False
         while not stop_event.is_set():
-            self.dispatch_pending(limit=limit)
+            try:
+                self.dispatch_pending(limit=limit)
+            except Exception as exc:
+                # A transient SQLite lock or unavailable store must not kill
+                # the only recovery sweep thread. Never log error details,
+                # which may contain target URLs or other sensitive values.
+                if not failure_reported:
+                    logging.getLogger(__name__).warning(
+                        "runtime dispatch sweep failed (%s); retrying",
+                        type(exc).__name__,
+                    )
+                failure_reported = True
+            else:
+                if failure_reported:
+                    logging.getLogger(__name__).info("runtime dispatch sweep recovered")
+                failure_reported = False
             stop_event.wait(interval_seconds)
