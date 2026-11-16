@@ -1,3 +1,11 @@
+## 2026-11-16 — #1682 Themis status-diff executor role awareness (The Paw / Claw / Hermes / Atlas)
+
+The existing `scripts/themis_status_diff.py` reported inventory deltas (projects, TODOs, Git SHA, and Atlas cycle), but did not surface the operational and PDCA cycle status of core executors (`The Paw`, `The Claw`, `Hermes`, `Atlas`). Operators running `/status-diff` could see macro TODO counts but lacked visibility into executor presence and current task actions.
+
+This change adds `get_roles_state(data_root)` to `scripts/themis_status_diff.py` and integrates section `## 🐾 3. 核心執行器與守護角色在席狀態 (Roles & Executors)` into the generated Markdown report. The status extraction reads directly from `$AGENT_DATA_ROOT/personas/<slug>/pdca/state.json`, reporting role active/running state, current PDCA cycle number, latest task name (truncated to 70 characters), and latest execution verdict (`[PASS]` / `[FAIL]`). Tests in `tests/test_themis_status_diff.py` cover role state rendering in the report.
+
+---
+
 ## 2026-11-15 — #470 / #1682 same-Node stale lease attempt fencing (PR #2310; source only)
 
 Existing DistributedControlPlane already owns SQLite-persisted IR tasks, unique idempotency keys, exclusive lease transactions, expiry requeue and target-node owner checks. The missing identity is the **individual lease attempt** when a worker restarts but retains the same Node ID. PR #2310 adds an in-place, default-zero SQLite `lease_epoch` migration (preserving prior task rows), increments it within each accepted lease transition, returns `leaseEpoch` in both exact and next-task lease contracts, and requires `lease_epoch` in DistributedGateway completion and ControlPlaneClient. Persisting a terminal result is now conditioned atomically on current owner, current epoch, active state and unexpired lease. Missing/old epoch is rejected rather than being inferred from node identity, task id or IR digest. Existing generic non-IR ControlPlane update behavior is unchanged.
