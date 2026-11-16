@@ -10,6 +10,10 @@ from agent_core.resolve_facade import resolve_continuation
 
 HANDOFF_SCHEMA = "agentos.canonical-ir-handoff/v1"
 IR_SCHEMA = "agentos.ir/v1"
+MAX_DECISIONS = 20
+MAX_EVIDENCE = 12
+# Keep decision entries <= 480 chars so one_mcp._project_resolve (500-char cap) stays lossless.
+MAX_DECISION_CHARS = 480
 # Explicitly supported opaque context, retained without interpreting it as authority.
 _CONTEXT_FIELDS = {
     "context": dict, "artifacts": list, "pruned_paths": list,
@@ -182,12 +186,16 @@ def advance_canonical_ir(
     for decision in decisions_append:
         if decision not in decisions:
             decisions.append(decision)
+    decisions = [
+        (item[: MAX_DECISION_CHARS - 3].rstrip() + "..." if len(item) > MAX_DECISION_CHARS else item)
+        for item in decisions
+    ][-MAX_DECISIONS:]
     existing_evidence = canonical_ir.get("evidence") or []
     if not isinstance(existing_evidence, list):
         raise ValueError("current canonical IR evidence must be a list")
     if _contains_sensitive(existing_evidence):
         raise ValueError("current canonical IR evidence contains a sensitive field")
-    evidence = [dict(item) for item in existing_evidence if isinstance(item, dict)] + evidence_append
+    evidence = ([dict(item) for item in existing_evidence if isinstance(item, dict)] + evidence_append)[-MAX_EVIDENCE:]
 
     capability = str(params.get("capability") or canonical_ir.get("capability") or "agentos.one.resolve").strip()
     publish_params = {
