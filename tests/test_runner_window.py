@@ -694,3 +694,169 @@ def test_golden_path_refuses_ambiguous_same_sha_runs(monkeypatch):
     assert result["ok"] is False
     assert result["run_id"] is None
     assert result["error"] == "ambiguous workflow run correlation"
+
+
+def test_teams_only_dispatch_reuses_registered_intent_and_exact_inputs():
+    from agentos_node import bootstrap_control as bc
+    intent, params = resolve_intent(
+        "github.actions", "workflow.dispatch",
+        source_commit="a" * 40,
+        payload={
+            "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+            "ref": "main",
+            "inputs": {"teams_only": "true"},
+        },
+    )
+    assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
+    assert params["inputs"] == {"teams_only": "true"}
+
+
+@pytest.mark.parametrize("ref,inputs", [
+    ("core/integration", {"teams_only": "true"}),
+    ("main", {}),
+    ("main", {"teams_only": "false"}),
+    ("main", {"teams_only": "True"}),
+    ("main", {"teams_only": True}),
+    ("main", {"teams_only": "true", "extra": "1"}),
+])
+def test_teams_cutover_bootstrap_rejects_any_other_dispatch_before_side_effects(
+    tmp_path, monkeypatch, ref, inputs,
+):
+    from agentos_node import bootstrap_control as bc, action_relay
+    monkeypatch.setattr(
+        action_relay.ActionRelayClient, "submit",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("relay was invoked before allowlist")
+        ),
+    )
+    req = {
+        "schema": bc.SCHEMA,
+        "request_id": "teams-cutover-test",
+        "action": bc.ACTION_GITHUB_ACTIONS_DISPATCH,
+        "params": {
+            "source_commit": "a" * 40,
+            "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+            "ref": ref,
+            "inputs": inputs,
+        },
+    }
+    with pytest.raises(ValueError, match="not allowlisted|only allows exact"):
+        bc._validate_request(tmp_path / "teams-cutover.request.json", req)
+
+
+@pytest.mark.parametrize("workflow,ref,inputs", [
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "core/integration", {"teams_only": "true"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "false"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": True}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "true", "extra": "yes"}),
+])
+def test_teams_cutover_action_relay_rejects_unsafe_targets_without_gh(
+    monkeypatch, workflow, ref, inputs,
+):
+    from agentos_node import action_relay
+    monkeypatch.setattr(
+        action_relay, "_run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("gh called before exact allowlist")
+        ),
+    )
+    with pytest.raises(ValueError, match="not allowlisted|Teams cutover"):
+        action_relay._github_actions_dispatch({
+            "repository": "alston-personal/agentmanager",
+            "workflow": workflow,
+            "ref": ref,
+            "inputs": inputs,
+            "expected_head_sha": "a" * 40,
+        })
+
+
+def test_teams_cutover_relay_rejects_stale_main_before_workflow_dispatch(monkeypatch):
+    from agentos_node import action_relay
+    calls = []
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "api", "repos/alston-personal/agentmanager/git/ref/heads/main"]:
+            return {"returncode": 0, "stdout": '{"object":{"sha":"' + "b" * 40 + '"}}', "stderr": ""}
+        raise AssertionError("workflow triggered despite wrong protected main SHA")
+    monkeypatch.setattr(action_relay, "_run", fake_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+        "ref": "main",
+        "inputs": {"teams_only": "true"},
+        "expected_head_sha": "a" * 40,
+    })
+    assert result["ok"] is False
+    assert result["dispatched"] is False
+    assert "head differs" in result["error"]
+    assert len(calls) == 2
+
+
+def test_teams_cutover_relay_must_verify_main_before_gh_run(monkeypatch):
+    from agentos_node import action_relay
+    calls = []
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "api", "repos/alston-personal/agentmanager/git/ref/heads/main"]:
+            return {"returncode": 1, "stdout": "", "stderr": "private reason"}
+        raise AssertionError("workflow triggered without verified main SHA")
+    monkeypatch.setattr(action_relay, "_run", fake_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+        "ref": "main",
+        "inputs": {"teams_only": "true"},
+        "expected_head_sha": "a" * 40,
+    })
+    assert result["ok"] is False
+    assert result["dispatched"] is False
+    assert result["error"] == "protected main head verification unavailable"
+    assert len(calls) == 2
+
+
+def test_teams_only_dispatch_sends_only_fixed_fields_with_verified_main(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import json
+    from agentos_node import action_relay
+
+    sha = "a" * 40
+    commands = []
+    def fake_run(argv, **kwargs):
+        commands.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "api", "repos/alston-personal/agentmanager/git/ref/heads/main"]:
+            return {"returncode": 0, "stdout": json.dumps({"object": {"sha": sha}}), "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "workflow", "run"]:
+            assert argv == [
+                "/usr/bin/gh", "workflow", "run",
+                "oracle-core-bundle-immutable-runtime-convergence.yml",
+                "--repo", "alston-personal/agentmanager",
+                "--ref", "main", "-f", "teams_only=true",
+            ]
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "run", "list"]:
+            created = (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat()
+            return {"returncode": 0, "stdout": json.dumps([{
+                "headSha": sha, "createdAt": created, "databaseId": 123456,
+                "status": "queued", "conclusion": None, "url": "https://github.com/alston-personal/agentmanager/actions/runs/123456",
+            }]), "stderr": ""}
+        raise AssertionError(argv)
+    monkeypatch.setattr(action_relay, "_run", fake_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+        "ref": "main",
+        "inputs": {"teams_only": "true"},
+        "expected_head_sha": sha,
+    })
+    assert result["ok"] is True
+    assert result["run_id"] == 123456
+    assert result["dispatch_ack_only"] is True
+    assert result["workflow_terminal_verified"] is False
+    assert len(commands) == 4

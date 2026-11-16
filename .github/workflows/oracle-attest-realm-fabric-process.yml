@@ -40,17 +40,32 @@ jobs:
   attest:
     needs: [validate]
     if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 4
+    # The Realm service is owned by ubuntu, not the agentos-node runner
+    # account. Reuse the governed Oracle SSH identity and preserve read-only
+    # semantics; never treat a different user's MainPID as the live listener.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Read only fixed live 8780 source candidates, never export raw config
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read only real ubuntu-owned 8780 listener using exact source attester
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/attest_realm_loaded_source_redacted.py > realm-8780-attestation.json
+          test "${DEPLOY_USER:-}" = ubuntu
+          EXPECTED_SHA="$(sha256sum agent_core/realm_server.py | awk '{print $1}')"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "AGENTOS_REALM_ATTEST_ROOT=/home/ubuntu/agentmanager AGENTOS_REALM_ATTEST_EXPECTED_SHA256=$EXPECTED_SHA python3 -" \
+            < scripts/attest_realm_loaded_source_redacted.py > realm-8780-attestation.json
           python3 -m json.tool realm-8780-attestation.json > /dev/null
           echo "realm_8780_redacted_attestation=PASS"
       - name: Save sanitized read-only attestation receipt

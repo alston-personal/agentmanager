@@ -13,12 +13,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # The tracked CLAUDE.md is a symlink to an Oracle-only absolute path.
-      # GitHub hosted pytest package discovery may follow it and fail EACCES.
-      # Remove only the exact host-only link from this disposable CI checkout.
-      - name: Exclude Oracle-only CLAUDE.md link from hosted test discovery
+      - name: Exclude Oracle-only symlink from hosted pytest discovery
         shell: bash
         run: |
+          # This tracked symlink points to a path unavailable on hosted runners.
           if [[ -L CLAUDE.md ]] && [[ "$(readlink CLAUDE.md)" == "/home/ubuntu/agent-data/templates/CLAUDE.md" ]]; then
             rm -- CLAUDE.md
           fi

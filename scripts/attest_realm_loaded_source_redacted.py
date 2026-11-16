@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import urllib.error
@@ -18,7 +19,10 @@ import urllib.request
 SCHEMA = "agentos.realm-loaded-source-attestation/v1"
 UNIT = "agentos-realm-fabric.service"
 MODULE = "agent_core/realm_server.py"
-ROOT = Path(__file__).resolve().parents[1]
+# A trusted hosted-Runner may stream this very script to the ubuntu user.
+# In that case __file__ is <stdin>; pin the root explicitly and compare the
+# live files against a trusted exact-commit SHA256, never the same local file.
+ROOT = Path(os.environ.get("AGENTOS_REALM_ATTEST_ROOT") or Path(__file__).resolve().parents[1])
 EXPECTED = ROOT / MODULE
 
 
@@ -29,6 +33,21 @@ def sha256(path: Path) -> str | None:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except (OSError, ValueError):
         return None
+
+
+def has_main_runtime_repair_policy(path: Path) -> bool:
+    """Inspect only on-disk policy presence; never expose code or token bytes."""
+    try:
+        if not path.is_file() or path.stat().st_size > 2_000_000:
+            return False
+        raw = path.read_bytes()
+        return (
+            b"_GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF" in raw
+            and b"main-action-runtime-migration-20261007.yml" in raw
+            and b"_validate_main_runtime_repair_intent" in raw
+        )
+    except (OSError, ValueError):
+        return False
 
 
 def parse_environ(raw: bytes) -> list[Path]:
@@ -61,6 +80,31 @@ def active_unit_state() -> tuple[str, int | None]:
     raw_pid = values.get("MainPID", "")
     pid = int(raw_pid) if raw_pid.isdigit() and 1 <= int(raw_pid) < 10_000_000 else None
     return status if status in ("active", "inactive", "failed") else "unknown", pid
+
+
+def unit_source_candidate() -> tuple[Path | None, str]:
+    """Read only effective systemd working directory; never expose its path."""
+    try:
+        wd = subprocess.check_output(
+            ["/usr/bin/systemctl", "--user", "show", UNIT,
+             "-p", "WorkingDirectory", "--value"],
+            text=True, stderr=subprocess.DEVNULL, timeout=6,
+        ).strip()
+        root = Path(wd)
+        if not root.is_absolute():
+            return None, "unavailable"
+        normalized = str(root)
+        if normalized == "/home/ubuntu/agentmanager":
+            category = "mutable_source_checkout"
+        elif normalized.startswith("/home/ubuntu/.local/share/agentos/realm-fabric/"):
+            category = "realm_immutable_or_current"
+        elif normalized.startswith("/home/ubuntu/agent-data/releases/core/"):
+            category = "core_release"
+        else:
+            category = "other"
+        return root / MODULE, category
+    except (OSError, subprocess.SubprocessError):
+        return None, "unavailable"
 
 
 def probe_health() -> bool:
@@ -134,7 +178,10 @@ def runner_identity_is_ubuntu() -> bool | None:
 
 def source_attestation() -> dict:
     state, pid = active_unit_state()
-    expected = sha256(EXPECTED)
+    trusted_hash = os.environ.get("AGENTOS_REALM_ATTEST_EXPECTED_SHA256")
+    if trusted_hash is not None and not re.fullmatch(r"[0-9a-f]{64}", trusted_hash):
+        raise ValueError("trusted source hash must be exact lowercase SHA256")
+    expected = trusted_hash or sha256(EXPECTED)
     listener_pids = public_proc_candidates()
     # A MainPID from a different user manager cannot be treated as the
     # listener identity. Public /proc argv discovery is read-only and bounded.
@@ -157,6 +204,8 @@ def source_attestation() -> dict:
     candidate_hashes = [h for h in candidate_hashes if h is not None]
     selected = candidate_hashes[0] if candidate_hashes else None
     canonical_checkout = sha256(Path("/home/ubuntu/agentmanager") / MODULE)
+    unit_candidate, unit_wd_class = unit_source_candidate()
+    unit_candidate_hash = sha256(unit_candidate) if unit_candidate is not None else None
 
     # Imported interpreter state cannot be conclusively recovered from a file
     # on disk. Report source identity as advisory only, never promotion PASS.
@@ -166,6 +215,7 @@ def source_attestation() -> dict:
         unit_contains_approved_path = (
             "/home/ubuntu/agentmanager" in raw_unit
             or "/home/ubuntu/agent-data/releases/" in raw_unit
+            or "/home/ubuntu/.local/share/agentos/realm-fabric/" in raw_unit
         )
     except (OSError, UnicodeError):
         unit_contains_approved_path = False
@@ -176,6 +226,7 @@ def source_attestation() -> dict:
         "unit_active": state == "active",
         "unit_status": state,
         "unit_pid_present": pid is not None,
+        "unit_mainpid_is_listener": pid is not None and pid in listener_pids,
         "listener_process_detected": bool(listener_pids),
         "single_listener_process_identified": len(listener_pids) == 1,
         "listener_owner_is_ubuntu": is_ubuntu_uid(observed_pid) if observed_pid is not None else None,
@@ -184,9 +235,22 @@ def source_attestation() -> dict:
             canonical_checkout == expected if canonical_checkout and expected else False
         ),
         "approved_unit_source_hint": unit_contains_approved_path,
+        "unit_working_directory_class": unit_wd_class,
+        "unit_source_candidate_available": unit_candidate_hash is not None,
+        "unit_source_candidate_matches_expected": (
+            unit_candidate_hash == expected if unit_candidate_hash and expected else False
+        ),
+        "unit_source_candidate_has_main_runtime_oidc_policy": (
+            has_main_runtime_repair_policy(unit_candidate)
+            if unit_candidate is not None else False
+        ),
         "expected_source_available": expected is not None,
         "process_candidate_source_available": bool(candidate_hashes),
         "process_candidate_matches_checkout": selected == expected if selected and expected else False,
+        "checkout_main_runtime_oidc_policy_present": has_main_runtime_repair_policy(EXPECTED),
+        "process_candidate_main_runtime_oidc_policy_present": any(
+            has_main_runtime_repair_policy(p) for p in module_candidates
+        ),
         "multiple_candidate_generations": len(set(candidate_hashes)) > 1,
         "health_schema_valid": probe_health(),
         "loaded_module_in_memory_verified": False,

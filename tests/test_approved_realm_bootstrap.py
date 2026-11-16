@@ -150,7 +150,18 @@ def test_manual_chronos_workflow_is_never_auto_dispatched():
     assert "persist-credentials: false" in wf
     assert "\n  push:" not in wf
     assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in wf
-    assert 'AGENTOS_SOURCE_COMMIT="$GITHUB_SHA" bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh' in wf
+    assert 'test "$GITHUB_EVENT_NAME" = workflow_dispatch' in wf
+    assert 'test "${DEPLOY_USER:-}" = ubuntu' in wf
+    assert 'test "$(id -un)" = ubuntu' in wf
+    assert 'test "$(git -C /home/ubuntu/agentmanager rev-parse origin/main)" = "$expected"' in wf
+    assert 'bash -s -- "$GITHUB_SHA"' in wf
+    assert 'git -C "$repo" show "$sha:scripts/repair_antigravity_relay_user.sh"' in wf
+    assert 'AGENTOS_SOURCE_COMMIT="$sha" AGENTOS_REPO="$repo"' in wf
+    assert "installed_relay_effective_unit_fence_revision=PASS" in wf
+    assert "safe_transport_recovery_v2=PASS" in wf
+    assert 'flock -n 9' in wf
+    assert "STALE_CHRONOS_INJECTION" in wf
+    assert 'AGENTOS_SOURCE_COMMIT=$GITHUB_SHA GITHUB_RUN_ID=$GITHUB_RUN_ID bash -s' not in wf
 
 
 def test_chronos_bridge_pins_script_and_installer_to_exact_main_sha():

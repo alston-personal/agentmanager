@@ -24,6 +24,37 @@ class TransportRepairCanonicalSourceTest(unittest.TestCase):
         self.assertEqual(call.call_args.kwargs["env_extra"]["AGENTOS_REF"], "main")
         self.assertIsNone(call.call_args.kwargs["source_commit"])
 
+    def test_manual_safe_chronos_uses_real_ubuntu_owner_not_agentos_node_runner(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml").read_text(encoding="utf-8")
+        script = root / "scripts/bootstrap_action_relay_via_chronos_safe_v2.sh"
+        import subprocess
+        self.assertEqual(subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode, 0)
+        self.assertIn("  workflow_dispatch:", workflow)
+        self.assertNotIn("  push:", workflow)
+        self.assertNotIn("  issue_comment:", workflow)
+        self.assertNotIn("runs-on: [self-hosted, Linux, ARM64, oracle]", workflow)
+        self.assertIn("runs-on: ubuntu-latest", workflow)
+        self.assertIn('test "$GITHUB_EVENT_NAME" = workflow_dispatch', workflow)
+        self.assertIn('test "$GITHUB_REF_NAME" = main', workflow)
+        self.assertIn('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', workflow)
+        self.assertIn('test "${DEPLOY_USER:-}" = ubuntu', workflow)
+        self.assertIn('test "$(id -un)" = ubuntu', workflow)
+        self.assertIn('test "$(git -C /home/ubuntu/agentmanager rev-parse origin/main)" = "$expected"', workflow)
+        self.assertIn('bash -s -- "$GITHUB_SHA"', workflow)
+        self.assertIn('git -C "$repo" show "$sha:scripts/repair_antigravity_relay_user.sh"', workflow)
+        self.assertIn('AGENTOS_SOURCE_COMMIT="$sha" AGENTOS_REPO="$repo"', workflow)
+        self.assertIn("safe_transport_repair_existing=PASS", workflow)
+        self.assertIn("installed_relay_effective_unit_fence_revision=PASS", workflow)
+        self.assertIn("safe_transport_recovery_v2=PASS", workflow)
+        self.assertIn("STALE_CHRONOS_INJECTION", workflow)
+        self.assertIn("flock -n 9", workflow)
+        self.assertIn("webfactory/ssh-agent@v0.9.0", workflow)
+        self.assertIn("chmod 2770", script.read_text(encoding="utf-8"))
+        self.assertNotIn("sudo ", workflow)
+        self.assertNotIn("systemctl --user restart", workflow)
+
     def test_existing_repair_script_enforces_exact_sha_and_realm_separation(self):
         from pathlib import Path
         script = (Path(__file__).resolve().parents[1] / "scripts" /

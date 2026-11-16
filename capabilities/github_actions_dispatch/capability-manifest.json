@@ -1,0 +1,61 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "github.actions.workflow.dispatch",
+  "display_name": "GitHub Actions Workflow Dispatch via AgentOS Runner Window",
+  "semantic_owner": "agentos.runner-window-action-relay",
+  "version": "1.0.0",
+  "lifecycle": "implemented",
+  "contract": {
+    "public_intent": {
+      "capability": "github.actions",
+      "operation": "workflow.dispatch"
+    },
+    "request_fields": [
+      "source_commit",
+      "workflow",
+      "ref",
+      "inputs"
+    ],
+    "outputs": [
+      "Action Relay capsule receipt",
+      "GitHub workflow run ID when uniquely correlated"
+    ],
+    "side_effects": [
+      "Triggers only explicitly allowlisted GitHub Actions workflows; downstream workflows may mutate production"
+    ],
+    "status_distinctions": [
+      "source_implemented",
+      "runtime_deployed_independently_proven",
+      "caller_authorized_independently_proven",
+      "dispatch_ack_only",
+      "workflow_terminal_verified_separately"
+    ]
+  },
+  "invocation": {
+    "kind": "runner-window",
+    "intent_registry": "agent_core/runner_window.py",
+    "authoritative_validation": "agentos_node/bootstrap_control.py",
+    "executor": "agentos_node/action_relay.py",
+    "cli_client": "scripts/agentos_dispatch.sh",
+    "workflow_frontend": ".github/workflows/agentos-dispatch.yml"
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://agentos.github-actions.workflow-dispatch",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "repos_allowlisted": true,
+    "workflows_refs_inputs_exact_allowlist": true,
+    "workflow_status_requires_terminal_readback": true,
+    "production_release_requires_separate_authorization": true,
+    "no_arbitrary_commands": true,
+    "note": "Do not describe missing ChatGPT connector workflow_dispatch or an unavailable Runtime bridge as missing AgentOS capability. Verify source, installed runtime generation, caller authority, transport, and terminal receipt independently."
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}

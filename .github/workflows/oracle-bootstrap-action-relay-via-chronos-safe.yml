@@ -10,19 +10,137 @@ permissions:
 
 jobs:
   bootstrap:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    # The existing recovery script mutates ubuntu-owned Chronos and spool
+    # directories. A non-owner self-hosted runner failed with EACCES;
+    # the enforced ubuntu-only SSH identity is now the recovery boundary.
+    # Reuse the already-authorized Oracle ubuntu SSH lane, without making
+    # this emergency-only workflow automatic or weakening its SHA fence.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Repair AgentOS transport through existing ubuntu Chronos
+      - name: Verify exact manual main release and Oracle ubuntu identity
         shell: bash
         run: |
           set -euo pipefail
           echo 'emergency_manual_invocation=YES'
-          test "$GITHUB_REF_NAME" = "main"
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF_NAME" = main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
-          AGENTOS_SOURCE_COMMIT="$GITHUB_SHA" bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "${DEPLOY_USER:-}" = ubuntu
+          bash -n scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          expected="$1"
+          test "$(id -un)" = ubuntu
+          test -d /home/ubuntu/agentmanager/.git
+          test -f /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+          git -C /home/ubuntu/agentmanager fetch --no-tags origin main >/dev/null
+          test "$(git -C /home/ubuntu/agentmanager rev-parse origin/main)" = "$expected"
+          test -w /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+          test -d /home/ubuntu/agent-data/runtime
+          test -d /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe
+          test -w /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe
+          echo "safe_chronos_ubuntu_owner_preflight=PASS"
+          REMOTE
+
+      - name: Repair exact main Action Relay via existing ubuntu owner, without scheduler injection
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The previous Chronos injection never produced a receipt despite
+          # a healthy scheduler. Use the EXISTING guarded repair entrypoint
+          # directly under the already authorized ubuntu rescue identity.
+          # No mutable checkout scripts, branch fallbacks or inline payload.
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          sha="$1"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$(id -un)" = ubuntu
+          repo=/home/ubuntu/agentmanager
+          bridge=/home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe
+          target="$repo/scripts/update_scheduler_board.py"
+          test -d "$bridge" && test -w "$bridge"
+          # Non-overlapping emergency repairs must never run concurrently.
+          exec 9>"$bridge/.direct-rescue.lock"
+          flock -n 9 || { echo "safe_transport_recovery=LOCK_HELD"; exit 3; }
+          # The previous attempt MUST have restored its one-time injection
+          # before a direct repair can begin. Never overwrite a live bridge.
+          test -f "$target" && test -w "$target"
+          if grep -Eq '^# AGENTOS_ONE_TIME_CHRONOS(_SAFE_BOOTSTRAP(_V2)?)?' "$target"; then
+            echo "safe_transport_recovery=STALE_CHRONOS_INJECTION"; exit 4
+          fi
+          git -C "$repo" fetch --no-tags origin main >/dev/null
+          test "$(git -C "$repo" rev-parse origin/main)" = "$sha" || {
+            echo "safe_transport_recovery=MAIN_HEAD_CHANGED"; exit 5;
+          }
+          tmp="$(mktemp -d "$bridge/direct-rescue.XXXXXXXX")"
+          trap 'rm -rf "$tmp"' EXIT
+          git -C "$repo" show "$sha:scripts/repair_antigravity_relay_user.sh" > "$tmp/repair.sh"
+          test -s "$tmp/repair.sh"
+          bash -n "$tmp/repair.sh"
+          # Preinstalled script performs its own exact SHA, experience predecessor,
+          # runtime rollback and service / Realm isolation checks. Never edit it.
+          if ! AGENTOS_ACTION_SPOOL_PREPROVISIONED=1 AGENTOS_REF=main \
+             AGENTOS_SOURCE_COMMIT="$sha" AGENTOS_REPO="$repo" \
+             bash "$tmp/repair.sh" > "$tmp/repair.log" 2>&1; then
+            echo "safe_transport_recovery=EXISTING_REPAIR_FAILED"
+            grep -E '^(antigravity_repair_(stage|exit|line)=|experience_preflight=|ERROR:)' "$tmp/repair.log" | tail -n 20 || true
+            exit 6
+          fi
+          for marker in \
+            "antigravity_repair=PASS" \
+            "action_relay_install=PASS" \
+            "agentos_source_commit=$sha" \
+            "action_relay_source_commit=$sha" \
+            "realm_fabric_mutation=NONE"; do
+            grep -Fxq "$marker" "$tmp/repair.log" || {
+              echo "safe_transport_recovery=REPAIR_RECEIPT_MISSING"; exit 7;
+            }
+          done
+          echo "safe_transport_repair_existing=PASS"
+          # Require evidence from the INSTALLED Relay, not from GitHub source
+          # or an installer printout. An ACK is not a release acceptance.
+          python3 - "$sha" <<'PY'
+          import sys, time
+          from pathlib import Path
+          sys.path.insert(0, "/home/ubuntu/agentmanager")
+          from agentos_node.action_relay import ActionRelayClient
+          client = ActionRelayClient(Path("/home/ubuntu/agent-data/runtime/action-relay"))
+          submitted = client.submit("agentos.realm-fabric.deployment_status", {})
+          receipt = None
+          deadline = time.monotonic() + 60
+          while time.monotonic() < deadline:
+              receipt = client.receipt(submitted["capsule_id"])
+              if receipt is not None:
+                  break
+              time.sleep(0.5)
+          if not receipt or receipt.get("ok") is not True:
+              raise SystemExit("installed_relay_status=NO_VALID_RECEIPT")
+          if receipt.get("action") != "agentos.realm-fabric.deployment_status":
+              raise SystemExit("installed_relay_status=WRONG_ACTION")
+          if receipt.get("installer_revision") != "realm-fabric-effective-unit-fence/v1":
+              raise SystemExit("installed_relay_status=REVISION_NOT_ATTESTED")
+          print("installed_relay_effective_unit_fence_revision=PASS")
+          PY
+          ! grep -Eq '^# AGENTOS_ONE_TIME_CHRONOS(_SAFE_BOOTSTRAP(_V2)?)?' "$target"
+          echo "one_time_safe_bridge_v2_removed=YES"
+          echo "realm_fabric_mutation=NONE"
+          echo "safe_transport_recovery_v2=PASS"
+          REMOTE

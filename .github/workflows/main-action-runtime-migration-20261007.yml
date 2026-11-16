@@ -45,6 +45,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Exclude exact Oracle-only CLAUDE.md symlink on hosted CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -L CLAUDE.md ]] && [[ "$(readlink CLAUDE.md)" == "/home/ubuntu/agent-data/templates/CLAUDE.md" ]]; then
+            rm -- CLAUDE.md
+          fi
       - name: Validate fixed ONE deployment inspection contracts
         run: |
           set -euo pipefail
