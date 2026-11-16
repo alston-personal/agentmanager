@@ -1124,7 +1124,10 @@ scoped `ir.advance` endpoint guarded by `observed_index_id`/`observed_ir_id`
 generation fencing (`409 stale_generation` on mismatch), resolving the governance
 directory relative to the active `data_root` and returning an
 `agentos.ir-writeback-receipt/v1` receipt after `advance_canonical_ir` +
-`activate_continuation`.
+`activate_continuation`. `agent_core/canonical_ir_handoff.py` (`advance_canonical_ir`)
+enforces bounded rolling windows (`decisions[-20:]`, `evidence[-12:]`, and
+`<= 480` chars per decision) so `latest.json` stays compact and lossless under
+`one_mcp._project_resolve`.
 still validates every write. See [Stop writeback compatibility](IR_STOP_WRITEBACK.md)
 for deployment dependencies, real temporary-store tests, and remaining session-binding
 limits. This does not repair the production active IR or claim platform deployment.

@@ -196,6 +196,46 @@ class CanonicalIrHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "restricted to agentos-core"):
             advance_canonical_ir(request(project_id="other"))
 
+    @patch("agent_core.canonical_ir_handoff.publish_project_continuation")
+    @patch("agent_core.canonical_ir_handoff.resolve_continuation")
+    def test_enforces_rolling_bounds_and_lossless_decision_length(self, resolve, publish):
+        long_decision = "D" * 600
+        resolve.return_value = {
+            "index_id": "idx-1",
+            "execution_head": {"schema": "agentos.execution-head/v1", "index_id": "idx-1", "execution_head": {"status": "in_progress"}},
+            "continuation": {
+                "canonical_ir": {
+                    "schema_version": "agentos.ir/v1",
+                    "index_id": "idx-1",
+                    "ir_id": "ir-1",
+                    "goal": "Goal",
+                    "constraints": [],
+                    "decisions": [f"old-{i}" for i in range(25)],
+                    "pending_tasks": [],
+                    "evidence": [{"kind": "k", "verdict": "PASS", "summary": f"ev-{i}"} for i in range(15)],
+                    "continuation": {"next_action": "Next", "recommended_action": "Next"},
+                    "capability": "agentos.one.resolve",
+                }
+            },
+        }
+        publish.return_value = {"guarded_advance": True}
+        advance_canonical_ir(
+            request(
+                expected_index_id="idx-1",
+                expected_ir_id="ir-1",
+                new_index_id="idx-2",
+                new_ir_id="ir-2",
+                decisions_append=[long_decision],
+                evidence=[{"kind": "k", "verdict": "PASS", "summary": "ev-new"}],
+            )
+        )
+        published_ir = publish.call_args.args[0]["continuation"]["canonical_ir"]
+        self.assertEqual(len(published_ir["decisions"]), 20)
+        self.assertEqual(len(published_ir["decisions"][-1]), 480)
+        self.assertTrue(published_ir["decisions"][-1].endswith("..."))
+        self.assertEqual(len(published_ir["evidence"]), 12)
+        self.assertEqual(published_ir["evidence"][-1]["summary"], "ev-new")
+
 
 if __name__ == "__main__":
     unittest.main()
