@@ -60,10 +60,22 @@ class TestThemisStatusDiff(unittest.TestCase):
             "projects_summary": {"total_projects": 1, "total_open": 2, "total_closed": 1, "total_with_ac": 0},
             "projects": {},
             "atlas": {"latest_cycle": 10},
+            "roles": {
+                "the-paw": {
+                    "display_name": "The Paw (工匠貓爪)",
+                    "status": "RUNNING",
+                    "cycle": 100,
+                    "latest_task": "單元測試執行",
+                    "latest_verdict": "PASS",
+                }
+            },
         }
         delta = compute_delta(None, curr)
         self.assertFalse(delta["has_baseline"])
         self.assertIn("首次", delta["message"])
+        md = format_markdown_report(curr, delta)
+        self.assertIn("The Paw (工匠貓爪)", md)
+        self.assertIn("RUNNING", md)
 
     def test_compute_delta_with_progression(self):
         base = {

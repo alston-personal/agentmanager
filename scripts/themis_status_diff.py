@@ -143,6 +143,53 @@ def get_atlas_state(data_root: Path) -> Dict[str, Any]:
     }
 
 
+def get_roles_state(data_root: Path) -> Dict[str, Any]:
+    """採集核心角色 (The Paw / The Claw / Hermes 等) 之 PDCA 狀態與最新活動。"""
+    personas_dir = data_root / "personas"
+    key_roles = [
+        ("the-paw", "The Paw (工匠貓爪)"),
+        ("the-claw", "The Claw (安全審查)"),
+        ("sector-hermes", "Hermes (技術偵察使)"),
+        ("system-atlas", "Atlas (守護神)"),
+    ]
+
+    roles_info: Dict[str, Any] = {}
+    for slug, display_name in key_roles:
+        state_file = personas_dir / slug / "pdca" / "state.json"
+        if not state_file.is_file():
+            roles_info[slug] = {
+                "display_name": display_name,
+                "status": "UNKNOWN",
+                "cycle": 0,
+                "latest_task": None,
+                "latest_verdict": None,
+                "last_tick_at": None,
+            }
+            continue
+
+        try:
+            st = json.loads(state_file.read_text(encoding="utf-8"))
+            activities = st.get("recent_activities", [])
+            latest_act = activities[0] if activities else {}
+            roles_info[slug] = {
+                "display_name": display_name,
+                "status": st.get("status", "ACTIVE"),
+                "cycle": st.get("cycle", 0),
+                "latest_task": latest_act.get("task"),
+                "latest_verdict": latest_act.get("verdict"),
+                "last_tick_at": st.get("last_tick_at"),
+            }
+        except Exception as e:
+            roles_info[slug] = {
+                "display_name": display_name,
+                "status": "ERROR",
+                "cycle": 0,
+                "error": str(e),
+            }
+
+    return roles_info
+
+
 def capture_snapshot(project_root: Path = AGENTMANAGER_DEFAULT, data_root: Path = AGENT_DATA_DEFAULT) -> Dict[str, Any]:
     """採集當前全生態狀態快照。"""
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
@@ -151,6 +198,7 @@ def capture_snapshot(project_root: Path = AGENTMANAGER_DEFAULT, data_root: Path 
     git_info = get_git_info(project_root)
     project_map, summary = scan_projects(data_root)
     atlas_state = get_atlas_state(data_root)
+    roles_state = get_roles_state(data_root)
 
     snapshot = {
         "schema": "agentos.inventory-snapshot/v1",
@@ -160,6 +208,7 @@ def capture_snapshot(project_root: Path = AGENTMANAGER_DEFAULT, data_root: Path 
         "projects_summary": summary,
         "projects": project_map,
         "atlas": atlas_state,
+        "roles": roles_state,
     }
     return snapshot
 
@@ -309,6 +358,30 @@ def format_markdown_report(current: Dict[str, Any], delta: Dict[str, Any]) -> st
             lines.append("### 🎯 專案推進動態明細")
             for ch in td["project_changes"]:
                 lines.append(f"  - **`{ch['project']}`**：Open `{ch['open_delta']:+d}`, Closed `{ch['closed_delta']:+d}`")
+
+    # 3. 核心執行器與守護角色在席狀態
+    roles_state = current.get("roles", {})
+    if roles_state:
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("## 🐾 3. 核心執行器與守護角色在席狀態 (Roles & Executors)")
+        for slug, r_info in roles_state.items():
+            name = r_info.get("display_name", slug)
+            status = r_info.get("status", "UNKNOWN")
+            cycle = r_info.get("cycle", 0)
+            latest_task = r_info.get("latest_task")
+            latest_verdict = r_info.get("latest_verdict")
+
+            status_desc = f"`{status}` (Cycle: `{cycle}`)"
+            detail = ""
+            if latest_task:
+                # 截斷過長任務名
+                task_snippet = (latest_task[:70] + "...") if len(latest_task) > 70 else latest_task
+                verdict_snippet = f" ➔ `[{latest_verdict}]`" if latest_verdict else ""
+                detail = f"\n  - 最新動作: {task_snippet}{verdict_snippet}"
+
+            lines.append(f"- **{name}**: {status_desc}{detail}")
 
     lines.append("")
     lines.append("---")
