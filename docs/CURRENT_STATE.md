@@ -1,3 +1,14 @@
+## 2026-11-16 — #1682 Hermes Recon Ledger and Themis status-diff intelligence reporting
+
+Hermes (`sector.hermes`) acts as the technology scout responsible for external reconnaissance and three-tier filtering (Tier 0 vaporize noise, Tier 1 store tools into Atlas knowledge, Tier 2 forward RFCs to Weaver). Previously, Hermes executed static heartbeat passes without persisting structured reconnaissance logs or reporting ingested external capabilities in status diffs.
+
+This change introduces:
+1. `recon_ledger.json` tracking under `$AGENT_DATA_ROOT/personas/sector-hermes/recon_ledger.json` (`agentos.hermes-recon-ledger/v1`), recording discovered repositories, star metrics, tiers, categories, knowledge writeups, and ingested skill paths (e.g. `Leonxlnx/taste-skill`).
+2. Auditing of `recon_ledger.json` in `HermesReconWorker.do()` in `agent_core/base_pdca.py`, linking periodic PDCA execution to actual intelligence ingestion.
+3. Reporting of Hermes intelligence outputs in `scripts/themis_status_diff.py` under the `Roles & Executors` section (`情資成果: 共引進 N 項武器 (最新: ...)`).
+
+---
+
 ## 2026-11-16 — #1682 Themis status-diff executor role awareness (The Paw / Claw / Hermes / Atlas)
 
 The existing `scripts/themis_status_diff.py` reported inventory deltas (projects, TODOs, Git SHA, and Atlas cycle), but did not surface the operational and PDCA cycle status of core executors (`The Paw`, `The Claw`, `Hermes`, `Atlas`). Operators running `/status-diff` could see macro TODO counts but lacked visibility into executor presence and current task actions.

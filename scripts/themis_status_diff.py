@@ -179,6 +179,21 @@ def get_roles_state(data_root: Path) -> Dict[str, Any]:
                 "latest_verdict": latest_act.get("verdict"),
                 "last_tick_at": st.get("last_tick_at"),
             }
+
+            # 若為 Hermes，額外讀取情資成果台帳 (recon_ledger.json)
+            if slug == "sector-hermes":
+                recon_ledger_file = personas_dir / slug / "recon_ledger.json"
+                if recon_ledger_file.is_file():
+                    try:
+                        ledger_data = json.loads(recon_ledger_file.read_text(encoding="utf-8"))
+                        records = ledger_data.get("records", [])
+                        if records:
+                            latest_recon = records[-1]
+                            roles_info[slug]["recon_summary"] = (
+                                f"共引進 {len(records)} 項武器 (最新: {latest_recon.get('name')} ⭐{latest_recon.get('stars', 0)})"
+                            )
+                    except Exception:
+                        pass
         except Exception as e:
             roles_info[slug] = {
                 "display_name": display_name,
@@ -380,6 +395,10 @@ def format_markdown_report(current: Dict[str, Any], delta: Dict[str, Any]) -> st
                 task_snippet = (latest_task[:70] + "...") if len(latest_task) > 70 else latest_task
                 verdict_snippet = f" ➔ `[{latest_verdict}]`" if latest_verdict else ""
                 detail = f"\n  - 最新動作: {task_snippet}{verdict_snippet}"
+
+            recon_summary = r_info.get("recon_summary")
+            if recon_summary:
+                detail += f"\n  - 情資成果: {recon_summary}"
 
             lines.append(f"- **{name}**: {status_desc}{detail}")
 
