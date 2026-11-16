@@ -142,6 +142,24 @@ class TestThemisStatusDiff(unittest.TestCase):
         self.assertIsInstance(worker, ThemisCommandWorker)
         self.assertEqual(worker.role_slug, "governance-themis-command-steward")
 
+    def test_cli_fails_closed_on_non_authoritative_data_root(self):
+        import os
+        import subprocess
+        import sys
+        for name in ("p1", "p2", "p3"):
+            (self.projects_dir / name).mkdir(exist_ok=True)
+        env = dict(os.environ)
+        env["AGENT_DATA_ROOT"] = str(self.mock_data)
+        proc = subprocess.run(
+            [sys.executable, "scripts/themis_status_diff.py", "--no-save", "--json"],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("NON_AUTHORITATIVE_DATA_ROOT", proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1458,7 +1458,7 @@ with CAS parent checks and atomic `active-continuation.json` activation.
 ### Themis Sacred Invocations & Temporal Inventory Diff Engine (2026-11-09)
 
 Consecrated **Themis 忒彌斯** (`governance.themis_command_steward`) as the Sacred Invocations and Slash Command Steward.
-Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_status_diff.py`) and command specification `.agentos/commands/status-diff.json`.
+Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_status_diff.py`) and command specification `.agentos/commands/status-diff.json`. `themis_status_diff.py` CLI fails closed (`NON_AUTHORITATIVE_DATA_ROOT`, exit `2`) when run against a non-Oracle `AGENT_DATA_ROOT` lacking `governance/directory.json` and documented projects.
 Features:
 - Scans full project island inventory (61+ projects, STATUS.md presence, Open/Closed/AC TODOs).
 - Persists historical snapshots in Data Layer (`$AGENT_DATA_ROOT/snapshots/inventory/`) preserving physical Logic/Data separation.
