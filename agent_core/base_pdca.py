@@ -1248,6 +1248,21 @@ class HermesReconWorker(BasePDCAWorker):
             "✅ 三級分流閥運作中：Tier 0 (雜訊蒸發) / Tier 1 (工具入Atlas) / Tier 2 (架構借鏡呈Weaver)",
             "✅ 成功防禦外部資訊直接倒灌 Weaver，保護系統架構編織帶寬",
         ]
+
+        # 審查並記錄外部情報台帳 (Recon Ledger)
+        recon_ledger_file = self.data_root / "personas" / "sector-hermes" / "recon_ledger.json"
+        if recon_ledger_file.is_file():
+            try:
+                ledger = json.loads(recon_ledger_file.read_text(encoding="utf-8"))
+                records = ledger.get("records", [])
+                total = len(records)
+                latest_name = records[-1].get("name", "none") if records else "none"
+                findings.append(f"✅ 情資成果台帳運作正常：共沉澱 {total} 項外部開源武器 (最新: {latest_name})")
+            except Exception as e:
+                findings.append(f"⚠️ 情資成果台帳讀取異常: {e}")
+        else:
+            findings.append("ℹ️ 情資成果台帳尚未初始化")
+
         return {
             "action": "hermes_recon_audit",
             "findings": findings,
