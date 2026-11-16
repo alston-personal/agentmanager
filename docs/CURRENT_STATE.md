@@ -1109,6 +1109,43 @@ A successful process start, health endpoint, or workflow status is not enough to
 
 ## Memory and Cognitive IR boundary
 
+### Evidence-only Stop compatibility (source candidate)
+
+The reused `agentos_node/ir_stop_sync.py` now records automatic Stop text only as
+unverified turn evidence while preserving task semantics and execution status.
+Explicit semantic checkpoint changes require the observed project/index/IR tuple;
+missing selectors no longer trigger a guessed Core fallback. The guarded publisher
+still validates every write. See [Stop writeback compatibility](IR_STOP_WRITEBACK.md)
+for deployment dependencies, real temporary-store tests, and remaining session-binding
+limits. This does not repair the production active IR or claim platform deployment.
+
+### Mandatory Core IR validation (source candidate)
+
+The canonical publisher calls the deterministic [IR validation contract](IR_VALIDATION.md)
+inside its generation lock before writing either output. Failures reject publication;
+receipts bind passing validation to rule version and parent/child hashes. The same
+validator is available through `scripts/validate_canonical_ir.py`. Existing pre-commit
+and CI documentation guards require validator/CLI/test/contract changes together.
+No new role or model invocation is introduced. Legacy Stop semantic rewrites will
+be rejected; deployment needs compatible evidence-only hooks. This is not deployed,
+not semantic relevance proof, and not protection for every IR family or raw file writes.
+
+### Handoff semantic preservation (source candidate)
+
+`agent_core/canonical_ir_handoff.py` now preserves existing `context`, `artifacts`,
+`pruned_paths`, `tensions`, `frontier`, and continuation metadata across a guarded
+generation advance. Omitted pending tasks are retained; an explicit empty list
+still clears them. Unsupported parent fields or structured entries in the string-list
+profile fail before publication instead of silently losing or stringifying data.
+Inherited sensitive credential fields are rejected. This does not add authority,
+translate MSCS profiles, prevent unrelated Stop-hook writeback, or prove cognitive
+continuity. Tests include real temporary-store publish/resolve and stale-write rejection.
+
+See [IR origin, authoring contract and drift inventory](COGNITIVE_IR_ORIGIN_AND_CONTRACT.md)
+for dated source provenance, the distinction between transport/continuation/reasoning/governance
+representations, and observed field-preservation gaps. Its unified semantic contract and
+migration checklist are **proposed**, not a deployed schema or proven cross-model continuity.
+
 Historical three-layer memory remains a useful conceptual model: L1 immediate/working state, L2 project/continuation state, and L3 stable cross-project knowledge and learned patterns. Current AgentOS separates canonical project state, continuation/work state, governance state, runtime state, receipts/evidence, and validated knowledge.
 
 Model-independent Cognitive IR remains a research hypothesis until repeatable cross-model continuity benchmarks demonstrate preservation of active goal, decisions/constraints, rejected paths, open questions, and next direction.
