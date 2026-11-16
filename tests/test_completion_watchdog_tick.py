@@ -66,5 +66,28 @@ class CompletionChronosTickTests(unittest.TestCase):
         from agent_core.employee_runtime import EmployeeRuntime
         self.assertEqual(EmployeeRuntime(self.root/"employee-runtime").get_assignment(ASSIGNMENT_ID).state, "pending")
 
+    def test_consumes_atlas_attention_queue_with_zero_orphans(self):
+        atlas_dir = self.root / "atlas"
+        atlas_dir.mkdir(parents=True, exist_ok=True)
+        (atlas_dir / "attention_queue.json").write_text(json.dumps({
+            "schema": "agentos.atlas-attention/v1",
+            "cycle": 1393,
+            "open_loop_count": 2,
+            "top_attention_items": [
+                "1.1 Add unit tests `[antigravity-duel-plugin]` P9",
+                "1.2 Verify endpoint [AC: HTTP 200] `[agentmanager]` P1",
+            ],
+        }), encoding="utf-8")
+        out = tick(self.root, at=datetime(2026, 11, 9, tzinfo=timezone.utc))
+        triage = out["atlas_triage"]
+        self.assertEqual(triage["status"], "triaged")
+        self.assertEqual(triage["orphan_count"], 0)
+        self.assertEqual(triage["needs_human_triage_count"], 1)
+        self.assertEqual(triage["ready_for_intake_count"], 1)
+        persisted = json.loads((atlas_dir / "triage_queue.json").read_text(encoding="utf-8"))
+        self.assertEqual(persisted["schema"], "agentos.atlas-triage/v1")
+        self.assertEqual(persisted["items"][0]["status"], "BLOCKED_NEEDS_HUMAN_TRIAGE")
+        self.assertEqual(persisted["items"][1]["status"], "READY_FOR_INTAKE")
+
 if __name__=="__main__":
     unittest.main()
