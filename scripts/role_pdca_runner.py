@@ -379,31 +379,46 @@ if __name__ == "__main__":
         print("\n=== Paw PDCA Summary ===")
         print(json.dumps(res, indent=2, ensure_ascii=False))
     elif args.role in ("all", "ecosystem"):
-        from agent_core.base_pdca import get_worker, WORKER_REGISTRY
-        print("🐾 Running The Paw cycle...")
+        import yaml
+        from agent_core.base_pdca import get_worker
+        from agent_core.role_handoff_bus import acknowledge_tasks_for_role
+
+        print("🐾 [Ecosystem PDCA] 啟動 Base Role 動態自省循環...")
         try:
             run_paw_cycle()
         except Exception as e:
             print(f"⚠️ Paw error: {e}")
 
-        # 全生態核心角色巡檢名冊 (22 位核心守護神祇與專案代表)
-        all_roles_to_run = [
-            "the-claw", "system-atlas", "system-quality-sentinel", "sector-hermes",
-            "system-aesthetic-director-venus", "governance-themis-command-steward",
-            "system-gateway-steward", "system-dns-steward", "system-port-window-steward",
-            "sector-weaver", "sector-whisperer", "product-zeus-writer", "product-youtube-ai-manager",
-            "governance-spec-steward", "governance-keeper", "system-cartographer",
-            "system-memory-archivist", "system-academic-researcher", "knowledge-chronicler",
-            "governance-role-steward", "tiandao-cangxuan", "tiandao-geek"
-        ]
-
-        for role_key in all_roles_to_run:
-            print(f"\n--- Running {role_key} PDCA ---")
+        # 動態自省：由 registry.yaml 發現所有 active 角色，徹底擺脫寫死名冊！
+        reg_file = AGENTMANAGER / ".agent" / "roles" / "registry.yaml"
+        active_role_ids = []
+        if reg_file.is_file():
             try:
+                reg_data = yaml.safe_load(reg_file.read_text(encoding="utf-8"))
+                for r in reg_data.get("roles", []):
+                    if r.get("status") == "active" and r.get("id") not in ("sector.paw", "the-paw"):
+                        active_role_ids.append(r.get("id"))
+            except Exception as e:
+                print(f"⚠️ 解析角色註冊表失敗: {e}")
+
+        # 兼顧遺留實例
+        for extra in ["tiandao-cangxuan", "tiandao-geek"]:
+            if extra not in active_role_ids:
+                active_role_ids.append(extra)
+
+        print(f"🏛️  動態發現 {len(active_role_ids)} 位在席角色，自主依序推進心跳與交接簽收...")
+        for role_key in active_role_ids:
+            try:
+                # 1. 自動簽收 (ACK) 指向該角色的交接任務至其優先佇列
+                acks = acknowledge_tasks_for_role(role_key)
+                if acks:
+                    print(f"📥 [{role_key}] 自動 ACK 簽收 {len(acks)} 項新交接任務！")
+
+                # 2. 執行該角色的本能 PDCA 循環
                 w = get_worker(role_key)
                 w.run_cycle()
             except Exception as e:
-                print(f"⚠️ {role_key} PDCA execution error: {e}")
+                print(f"⚠️ {role_key} PDCA 自主循環異常: {e}")
     else:
         from agent_core.base_pdca import get_worker
         worker = get_worker(args.role)

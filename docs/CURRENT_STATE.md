@@ -1,3 +1,16 @@
+## 2026-11-17 — #1682 Role task handoff bus with ACK handshake, priority queues, and dynamic registry-driven PDCA
+
+1. **Role task handoff bus with bidirectional ACK protocol**:
+   - Implemented `agent_core/role_handoff_bus.py` governing inter-role task handoffs (`agentos.role-task-handoff/v1`).
+   - Supports 4-stage lifecycle: `DISPATCHED -> ACKNOWLEDGED -> IN_PROGRESS -> COMPLETED`.
+   - Upper hand dispatches task payload with priority weight (P0 > P1 > ... > P9); downstream role acknowledges upon waking and queues tasks into a prioritized local queue (`get_prioritized_queue_for_role`).
+   - Covered by unit tests in `tests/test_role_handoff_bus.py`.
+2. **Dynamic registry-driven PDCA execution (Base Role compliance)**:
+   - Refactored `scripts/role_pdca_runner.py --role all` to dynamically discover active roles from `.agent/roles/registry.yaml`.
+   - Eliminated hardcoded role arrays; any newly approved role inheriting from `core.root` automatically joins the PDCA heartbeat loop and processes handoff ACKs without manual crontab edits.
+
+---
+
 ## 2026-11-17 — #1682 Universal Role PDCA Runner ecosystem expansion and 23-role awakening
 
 1. **Ecosystem-wide PDCA execution expansion**:
