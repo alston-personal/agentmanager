@@ -100,6 +100,38 @@ class CompanionPublisherTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), original)
         self.assertFalse(list(self.directory.glob(".agentos-reply-*")))
 
+    def test_mock_capture_to_verified_slot_write(self):
+        from scripts.wow_companion_bridge_adapter import QuestionBridgeAdapter
+        from scripts.wow_companion_frames import encode_question
+
+        frame = encode_question(b"abcdefgh", 81, "Where is the mage trainer?")[0]
+        captured = frame + [0] * (200 - len(frame))
+        def provider(question, request_id, key):
+            self.assertEqual(question, "Where is the mage trainer?")
+            self.assertEqual(key, "ephemeral-test-key")
+            return {
+                "schema": SCHEMA, "request_id": request_id,
+                "category": "general", "answer": "Ask a guard.",
+                "sources": [], "action": {"type": "ui.answer"}
+            }
+
+        bridge = QuestionBridgeAdapter(
+            lambda session: session == b"abcdefgh".hex(),
+            lambda: "ephemeral-test-key",
+            provider=provider,
+        )
+        result = bridge.accept_capture(captured)
+        self.assertEqual(result["status"], "SLOT_READY")
+        self.assertFalse(result["published"])
+        published = self._publish({
+            "schema": SCHEMA, "request_id": result["request_id"],
+            "category": "general", "answer": "Ask a guard.",
+            "sources": [], "action": {"type": "ui.answer"}
+        }, request_id=result["request_id"])
+        self.assertEqual(published["status"], "PUBLISHED")
+        self.assertFalse(published["game_received"])
+        self.assertEqual(self.target.read_bytes(), result["slot_bytes"])
+
     def test_game_receipt_is_not_implied(self):
         self.assertIs(self._publish()["game_received"], False)
 
