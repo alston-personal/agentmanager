@@ -53,3 +53,7 @@ This first provider always returns `ui.answer`; map coordinates must come from a
 ## Branch convergence
 
 Previous PR #2339 branch diverged as main advanced. A non-rewriting merge of current `main` onto the same working branch was produced, with Git compare confirming `behind=0` at that checked main revision; the merge is not itself authorization to deploy or merge. New upstream commits may require another reconciliation.
+
+## Host-local question gateway
+
+`scripts/wow_companion_ingress.py` implements typed, local-host-only `ai.ask` ingress as a **library callback**, not a new HTTP server or pixel transport. A trusted host session verifier must return the boolean `True`, and the API credential is obtained through an injected host callback. Requests have bounded session, ID and question fields, deny unknown executable fields and game commands, and enforce a finite replay fence before provider billing. The BYOK provider is restricted to `ui.answer` and cannot issue waypoints. This does not yet connect to the client; the transport remains under the #2135 source migration. No persistent credential storage or trusted local session capture is present.
