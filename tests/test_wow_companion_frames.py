@@ -53,10 +53,15 @@ class CompanionFrameTests(unittest.TestCase):
         with self.assertRaises(FrameError):
             decode_pixel_frame(corrupt)
 
-    def test_reject_extra_data(self):
+    def test_accept_full_capture_zero_padding(self):
+        cells = encode_pixel_frame(32, b"hello")
+        self.assertEqual(decode_pixel_frame(cells + [0] * (200 - len(cells))),
+                         (32, b"hello"))
+
+    def test_reject_nonzero_data_after_frame(self):
         cells = encode_pixel_frame(32, b"hello")
         with self.assertRaises(FrameError):
-            decode_pixel_frame(cells + [0, 0, 0])
+            decode_pixel_frame(cells + [0, 0, 1])
 
     def test_question_must_fit_byte_bound(self):
         with self.assertRaises(FrameError):
