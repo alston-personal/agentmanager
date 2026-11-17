@@ -40,3 +40,16 @@ python3 -m unittest tests.test_wow_companion_suite -v
 ## Non-goals and safety
 
 No agent impersonation, no universal permission to operate the player's OS, no auto-rotation or spell automation, no claim that chat subscription grants provider API quota, and no third-party license bypass.
+
+
+## Host BYOK adapter (source-only candidate)
+
+`scripts/wow_companion_byok.py` implements a bounded **OpenAI Responses API** host-side adapter with a fixed official endpoint, bounded input/output, caller-supplied API key (in-memory only), timeout, disabled provider-side response storage (`store: false`), injectable network transport for offline tests, and sanitized provider errors. It does **not** save keys, create an HTTP listener, browse web content, read WoW state, or communicate with the WoW client yet. Tests: `tests/test_wow_companion_byok.py`.
+
+This first provider always returns `ui.answer`; map coordinates must come from a separately verified game-knowledge source and pass `validate_reply`. Do not treat language-model hallucinated map coordinates as a trusted waypoint.
+
+**Security and product limitations:** `store: false` does not mean provider network traffic is local or exempt from provider retention policies. Users must understand API billing separately from ChatGPT subscriptions. Key custody belongs to a future Windows host credential-store adapter, not the Lua AddOn. Key values must never enter logs, Git, exports, or SavedVariables.
+
+## Branch convergence
+
+Previous PR #2339 branch diverged as main advanced. A non-rewriting merge of current `main` onto the same working branch was produced, with Git compare confirming `behind=0` at that checked main revision; the merge is not itself authorization to deploy or merge. New upstream commits may require another reconciliation.
