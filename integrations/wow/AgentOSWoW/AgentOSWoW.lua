@@ -154,13 +154,122 @@ local function handleCompanionAnswer(data)
     setState("AI text reply displayed; model/game facts not independently verified")
 end
 
+-- Diagnostic-only candidate multipart question display. The player explicitly
+-- stages a question and advances ONE RGB frame per click. No automatic retries,
+-- hidden time-based stepping, command execution, or claim of Bridge receipt.
+-- All frames use the same existing 200-cell screen-strip transport format.
+local stagedQuestionFrames = nil
+local stagedFrameIndex = 0
+local nextFrameButton
+local QUESTION_CHUNK_BYTES = 54
+local QUESTION_MAX_BYTES = 500
+local QUESTION_MAX_PARTS = 16
+local function encodeRawFrame(id, payload)
+    if type(payload) ~= "string" or #payload < 1 or #payload > 67 then return nil end
+    local bytes = {0xC7, 0x1A, math.floor(id / 256) % 256, id % 256,
+                   math.floor(#payload / 256) % 256, #payload % 256}
+    for i = 1, #payload do bytes[#bytes + 1] = payload:byte(i) end
+    local a, b = 0, 0
+    for i = 3, #bytes do
+        a = (a + bytes[i]) % 255
+        b = (b + a) % 255
+    end
+    bytes[#bytes + 1] = a
+    bytes[#bytes + 1] = b
+    local acc, bits, cells = 0, 0, {}
+    for _, byte in ipairs(bytes) do
+        acc = acc * 256 + byte
+        bits = bits + 8
+        while bits >= 3 do
+            bits = bits - 3
+            cells[#cells + 1] = math.floor(acc / (2 ^ bits)) % 8
+            acc = acc % (2 ^ bits)
+        end
+    end
+    if bits > 0 then cells[#cells + 1] = (acc * (2 ^ (3 - bits))) % 8 end
+    if #cells > PROBE_MAX_CELLS then return nil end
+    return cells
+end
+local function bytePair(n)
+    return string.char(math.floor(n / 256) % 256, n % 256)
+end
+local function stageDiagnosticQuestion()
+    if not questionBox then return end
+    local question = questionBox:GetText()
+    if type(question) ~= "string" or #question < 1 or #question > QUESTION_MAX_BYTES
+       or question:find("|", 1, true) then
+        setState("Invalid question; 1-500 UTF-8 bytes, no game markup")
+        return
+    end
+    for i = 1, #question do
+        local ch = question:byte(i)
+        if ch < 32 and ch ~= 9 and ch ~= 10 then
+            setState("Invalid question controls")
+            return
+        end
+    end
+    local total = math.ceil(#question / QUESTION_CHUNK_BYTES)
+    if total < 1 or total > QUESTION_MAX_PARTS then
+        setState("Question too long for diagnostic frames")
+        return
+    end
+    probeId = (probeId % 65535) + 1
+    local id = probeId
+    -- Eight bytes used only for correlation. NOT cryptographic authorization.
+    local session = ""
+    for i = 1, 8 do session = session .. string.char(math.random(0, 255)) end
+    local frames = {}
+    for index = 0, total - 1 do
+        local part = question:sub(index * QUESTION_CHUNK_BYTES + 1,
+                                  (index + 1) * QUESTION_CHUNK_BYTES)
+        local payload = string.char(0xA1) .. session .. bytePair(id)
+                        .. string.char(index, total) .. part
+        local cells = encodeRawFrame(id, payload)
+        if not cells then
+            setState("Unable to stage diagnostic frame")
+            return
+        end
+        frames[#frames + 1] = cells
+    end
+    stagedQuestionFrames = frames
+    stagedFrameIndex = 0
+    expectedAIRequestId = "ask-" .. tostring(id)
+    if nextFrameButton then nextFrameButton:Enable() end
+    setState("Question staged locally (" .. total .. " parts). Not sent; Bridge unverified")
+end
+local function displayNextDiagnosticFrame()
+    if not stagedQuestionFrames then
+        setState("Stage a question first")
+        return
+    end
+    if stagedFrameIndex >= #stagedQuestionFrames then
+        setState("No more frames; host receipt NOT verified")
+        return
+    end
+    local strip = ensureProbeStrip()
+    local cells = stagedQuestionFrames[stagedFrameIndex + 1]
+    for i, texture in ipairs(strip.cells) do
+        local cell = cells[i] or 0
+        texture:SetColorTexture(math.floor(cell / 4) % 2,
+                                math.floor(cell / 2) % 2, cell % 2, 1)
+    end
+    stagedFrameIndex = stagedFrameIndex + 1
+    strip:Show()
+    setState("Frame " .. stagedFrameIndex .. "/" .. #stagedQuestionFrames
+             .. " visible. No Bridge acknowledgment; advance manually")
+    if stagedFrameIndex == #stagedQuestionFrames then
+        stagedQuestionFrames = nil
+        if nextFrameButton then nextFrameButton:Disable() end
+    end
+end
+
 local function safeLabel(text, limit, pattern)
     return type(text) == "string" and #text <= limit
         and string.match(text, pattern) ~= nil
 end
 
 local function loadStatusReplySlot()
-    if probeId == 0 then setState("Send a status probe first"); return end
+    if probeId == 0 and not expectedAIRequestId then setState("Stage a question or send a status probe first"); return end
     if replySlotUsed then setState("Reply slot spent; /reload before another read"); return end
     replySlotUsed = true
     local loader = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
@@ -217,7 +326,7 @@ end
 local function createPanel()
     if panel then return panel end
     panel = CreateFrame("Frame", "AgentOSWoWPanel", UIParent, "BackdropTemplate")
-    panel:SetSize(445, 390)
+    panel:SetSize(445, 435)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetMovable(true)
     panel:EnableMouse(true)
@@ -248,19 +357,20 @@ local function createPanel()
     accountLine:SetText("Addon account: not signed in | Realm: none")
     local label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("TOPLEFT", accountLine, "BOTTOMLEFT", 0, -18)
-    label:SetText("Ask AgentOS (read-only; not available until bridge approval)")
+    label:SetText("AI question diagnostic (frames only; Bridge not connected)")
     questionBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
     questionBox:SetSize(383, 32)
     questionBox:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 7, -10)
     questionBox:SetAutoFocus(false)
     questionBox:SetMaxLetters(500)
     questionBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    questionBox:Disable()
+    questionBox:Enable()
     askButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     askButton:SetSize(110, 28)
     askButton:SetPoint("TOPLEFT", questionBox, "BOTTOMLEFT", -7, -18)
-    askButton:SetText("Send (disabled)")
-    askButton:Disable()
+    askButton:SetText("Stage question")
+    askButton:SetScript("OnClick", stageDiagnosticQuestion)
+    askButton:Enable()
     answerLine = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     answerLine:SetWidth(400)
     answerLine:SetJustifyH("LEFT")
@@ -276,9 +386,15 @@ local function createPanel()
     readSlot:SetPoint("TOPLEFT", answerLine, "BOTTOMLEFT", 0, -18)
     readSlot:SetText("Read reply slot (once)")
     readSlot:SetScript("OnClick", loadStatusReplySlot)
+    nextFrameButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    nextFrameButton:SetSize(167, 27)
+    nextFrameButton:SetPoint("TOPLEFT", readSlot, "BOTTOMLEFT", 0, -16)
+    nextFrameButton:SetText("Show next frame")
+    nextFrameButton:SetScript("OnClick", displayNextDiagnosticFrame)
+    nextFrameButton:Disable()
     local login = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     login:SetSize(175, 27)
-    login:SetPoint("TOPLEFT", readSlot, "BOTTOMLEFT", 0, -16)
+    login:SetPoint("TOPLEFT", nextFrameButton, "BOTTOMLEFT", 0, -10)
     login:SetText("Sign in via Bridge")
     login:SetScript("OnClick", requestAddonLogin)
     local logout = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
