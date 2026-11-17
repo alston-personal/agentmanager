@@ -1,3 +1,12 @@
+## 2026-11-17 — #1682 Hermes Recon Ledger ingestion, Pantheon live telemetry, and Taste Skill anti-slop alignment
+
+1. **Hermes Recon Ledger data key normalization**: Corrected `get_recon_ledger_data()` in `agent_core/recon_web.py` to recognize both `"records"` (canonical in `personas/sector-hermes/recon_ledger.json`) and `"ingested_weapons"`, surfacing all discovered external weapon entries (e.g. `taste-skill`) with stars, tier, category, and output skill paths.
+2. **Pantheon live telemetry & recent activity history**: Upgraded `/pantheon` from static role cards to live operational telemetry cards powered by `$AGENT_DATA_ROOT/personas/<slug>/pdca/state.json`. Surfaces live cycle counts, running status, current/in-progress task, and the last 5 executed PDCA task items with verdict badges (`[PASS]` / `[FAIL]`) and timestamps.
+3. **Taste Skill 2.5.1 front-end styling**: Refactored `/recon` and `/pantheon` visual layouts according to `design-taste-frontend` rules: equal edges, high-contrast monospace typography, craft terminal aesthetic, zero cheap gradients, and responsive data density.
+4. **Social Galaxy static distribution**: Fixed `/social-galaxy/` routing on `studio.milkcat.org` by deploying web component and demo bundle into the active web build distribution.
+
+---
+
 ## 2026-11-17 — #1682 Paw constructive execution closure and Cerberus pipeline liveliness sentinel
 
 Investigation revealed two failure modes in autonomous role progression:
