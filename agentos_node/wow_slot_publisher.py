@@ -36,7 +36,11 @@ def _existing_slot_file(slot_dir: Path) -> Path:
             raise SlotPublishError("SLOT_NOT_INSTALLED") from exc
         if not stat.S_ISREG(mode):
             raise SlotPublishError("UNSAFE_SLOT_PATH")
-    if b"## LoadOnDemand: 1" not in toc.read_bytes()[:1024]:
+    try:
+        toc_prefix = toc.read_bytes()[:1024]
+    except OSError:
+        raise SlotPublishError("SLOT_NOT_READABLE") from None
+    if b"## LoadOnDemand: 1" not in toc_prefix:
         raise SlotPublishError("UNSUPPORTED_SLOT")
     return target
 
