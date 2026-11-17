@@ -75,3 +75,9 @@ The Lua consumer now parses a distinct `agentos.wow.companion.reply/v1` data-onl
 `scripts/wow_companion_frames.py` implements a typed, 200-cell-compatible multi-part question codec aligned with the existing #2135 pixel-strip frame envelope (two magic bytes, frame ID, length, Fletcher-style checksum). It caps each part at 200 RGB cells and full UTF-8 question at 500 bytes, rejects missing/out-of-order/mixed-session frames, and yields a typed `ai.ask` request for the existing host gateway. The 8-byte session is **only a correlation label**, not an authentication token. A checksum is not a signature.
 
 **Not yet live:** Game client Lua emitter and frame pacing/capture acknowledgements are absent; the button remains disabled, and no host-to-game transport or trusted identity is implied. This prevents misleading users with an unacknowledged pixel transmit. The existing game client must pass a real WoW Forever test of its display/screen-capture compatibility before enabling questions.
+
+## Fixed-width capture parser and local receiver
+
+The 200-cell RGB strip used by the existing candidate UI always includes trailing unused cells in an actual screen capture. The protocol decoder now accepts exact **zero-only padding** after a valid packet and fails closed for nonzero trailing cells or malformed checksum. `scripts/wow_companion_receiver.py` accepts one captured frame at a time into one bounded in-flight question, with strict sequential part index, common request/session identifiers, maximum part count and expiry; errors discard partial state.
+
+`PART_CAPTURED` is **not a game ACK**. Without an authenticated, bidirectional host-to-game acknowledgement, it is unsafe to send multiple timed frames and assume they arrived. Do not enable the Lua Ask button or announce successful delivery until the capture driver/pacing, game-window identification and a verified acknowledgement model have real-game tests and rollback coverage.
