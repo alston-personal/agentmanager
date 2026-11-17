@@ -1,3 +1,11 @@
+## 2026-11-16 — #1682 completion_watchdog_tick standalone sys.path resolution
+
+`scripts/completion_watchdog_tick.py` imported `approved_wow_paw_handoff`, which in turn imports `agent_core`. When executed directly without an explicit `PYTHONPATH=.`, Python raised `ModuleNotFoundError: No module named 'agent_core'`.
+
+This fix automatically resolves `_REPO_ROOT = Path(__file__).resolve().parent.parent` and injects it into `sys.path` before importing sibling modules, enabling reliable standalone CLI invocation and systemd tick execution.
+
+---
+
 ## 2026-11-16 — #1682 Hermes Recon Ledger and Themis status-diff intelligence reporting
 
 Hermes (`sector.hermes`) acts as the technology scout responsible for external reconnaissance and three-tier filtering (Tier 0 vaporize noise, Tier 1 store tools into Atlas knowledge, Tier 2 forward RFCs to Weaver). Previously, Hermes executed static heartbeat passes without persisting structured reconnaissance logs or reporting ingested external capabilities in status diffs.
