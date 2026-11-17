@@ -381,11 +381,29 @@ if __name__ == "__main__":
     elif args.role in ("all", "ecosystem"):
         from agent_core.base_pdca import get_worker, WORKER_REGISTRY
         print("🐾 Running The Paw cycle...")
-        run_paw_cycle()
-        for role_key in ["the-claw", "tiandao-cangxuan", "tiandao-geek", "atlast", "cerberus", "hermes"]:
+        try:
+            run_paw_cycle()
+        except Exception as e:
+            print(f"⚠️ Paw error: {e}")
+
+        # 全生態核心角色巡檢名冊 (22 位核心守護神祇與專案代表)
+        all_roles_to_run = [
+            "the-claw", "system-atlas", "system-quality-sentinel", "sector-hermes",
+            "system-aesthetic-director-venus", "governance-themis-command-steward",
+            "system-gateway-steward", "system-dns-steward", "system-port-window-steward",
+            "sector-weaver", "sector-whisperer", "product-zeus-writer", "product-youtube-ai-manager",
+            "governance-spec-steward", "governance-keeper", "system-cartographer",
+            "system-memory-archivist", "system-academic-researcher", "knowledge-chronicler",
+            "governance-role-steward", "tiandao-cangxuan", "tiandao-geek"
+        ]
+
+        for role_key in all_roles_to_run:
             print(f"\n--- Running {role_key} PDCA ---")
-            w = get_worker(role_key)
-            w.run_cycle()
+            try:
+                w = get_worker(role_key)
+                w.run_cycle()
+            except Exception as e:
+                print(f"⚠️ {role_key} PDCA execution error: {e}")
     else:
         from agent_core.base_pdca import get_worker
         worker = get_worker(args.role)
