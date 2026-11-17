@@ -1,3 +1,14 @@
+## 2026-11-17 — #1682 Venus aesthetic director empowerment with Taste Skill and multi-perspective Social Galaxy
+
+1. **Venus Aesthetic Director primary skill binding**: Formally bound `design-taste-frontend` (Taste Skill 2.5.1, anti-AI-slop standard) as the primary governance skill of `system.aesthetic_director_venus` in `.agent/roles/registry.yaml` and `.agent/roles/instances/aesthetic_director_venus.md`. Venus is empowered to enforce equal edges, plain copy, craft terminal aesthetics, and zero dead-end navigation across all ecosystem web surfaces.
+2. **Multi-perspective Social Galaxy upgrade**: Refactored `social-galaxy-element.js` and `/social-galaxy/index.html` to provide:
+   - Three interactive view modes: Galaxy Orbit (planetary radial view), Activity Bubbles (clustering by platform engagement), and Identity Mesh Network (cross-platform entity correlation topology with link labels).
+   - Dynamic slide-out detail drawer displaying aligned social accounts (Threads, X, Bluesky, Matters) and 6-axis social radar indices (Reach, Intimacy, Authority, Diversity, Resonance, Velocity).
+   - Bidirectional navigation bar providing single-click returns to Studio and links to AgentOS Pantheon and Recon, eliminating dead-end routing.
+3. **Cross-site navigation audit**: Crawled and validated 40 endpoints across `agentos.milkcat.org` and `studio.milkcat.org`, confirming resolution of SPA fallback traps and dead-end routes.
+
+---
+
 ## 2026-11-17 — #1682 Hermes Recon Ledger ingestion, Pantheon live telemetry, and Taste Skill anti-slop alignment
 
 1. **Hermes Recon Ledger data key normalization**: Corrected `get_recon_ledger_data()` in `agent_core/recon_web.py` to recognize both `"records"` (canonical in `personas/sector-hermes/recon_ledger.json`) and `"ingested_weapons"`, surfacing all discovered external weapon entries (e.g. `taste-skill`) with stars, tier, category, and output skill paths.
