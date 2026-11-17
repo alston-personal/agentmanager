@@ -49,12 +49,27 @@ class WowCompanionClientCandidateTests(unittest.TestCase):
         ):
             self.assertIn(marker, self.lua)
 
-    def test_ai_submission_remains_disabled_without_transport(self):
-        self.assertIn('questionBox:Disable()', self.lua)
-        self.assertIn('askButton:Disable()', self.lua)
+    def test_question_only_stages_diagnostic_frames(self):
+        self.assertIn('questionBox:Enable()', self.lua)
+        self.assertIn('askButton:SetText("Stage question")', self.lua)
+        self.assertIn('askButton:SetScript("OnClick", stageDiagnosticQuestion)', self.lua)
+        self.assertIn('nextFrameButton:SetText("Show next frame")', self.lua)
+        self.assertIn('nextFrameButton:Disable()', self.lua)
         self.assertIn('local expectedAIRequestId = nil', self.lua)
+        self.assertIn('expectedAIRequestId = "ask-" .. tostring(id)', self.lua)
+        self.assertIn('Bridge unverified', self.lua)
         self.assertNotIn('RunScript(', self.lua)
         self.assertNotIn('loadstring(', self.lua)
+
+    def test_frame_layout_matches_existing_python_codec(self):
+        self.assertIn('local QUESTION_CHUNK_BYTES = 54', self.lua)
+        self.assertIn('local QUESTION_MAX_BYTES = 500', self.lua)
+        self.assertIn('local QUESTION_MAX_PARTS = 16', self.lua)
+        self.assertIn('string.char(0xA1) .. session .. bytePair(id)', self.lua)
+        self.assertIn('string.char(index, total) .. part', self.lua)
+        self.assertIn('if #cells > PROBE_MAX_CELLS then return nil end', self.lua)
+        self.assertIn('Frame " .. stagedFrameIndex', self.lua)
+        self.assertIn('No Bridge acknowledgment; advance manually', self.lua)
 
     def test_reply_slot_is_one_shot(self):
         self.assertIn('if replySlotUsed then', self.lua)
