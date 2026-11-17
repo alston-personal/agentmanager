@@ -861,7 +861,11 @@ Oracle installation/readiness evidence remain required. Even a matched reference
 does not establish source eligibility, image-provider acceptance, visual-review
 quality, hosting or autonomous IMAGE publication/readback.
 
-### Mio wardrobe source inspection (source candidate)
+### Mio lifestyle intelligence, authentic life micro-events and session keeper
+- **Threads authenticated session keeper**: Implemented `scripts/mio_threads_session_keeper.py` and persistent sealed vault at `agent-data/secrets/mio-threads-session/cookies.json` with automatic keep-alive and restore capabilities.
+- **Trend Digest daily intelligence restored**: Configured automated crontab schedule (08:00 and 16:00) running `trend_digest/runner.py --all` into `morning_reading.json`.
+- **Authentic life events integration**: Integrated `agent-data/personas/sunlake-milkcat/life_events_pool.json` into `scripts/persona_post_intent_generator.py` via `read_life_event_context()`, empowering Mio to anchor posts and reflections in genuine daily micro-events (coffee, walks, seasonal wardrobe reflections).
+- **Flexible posting contract**: Sentinel upgraded to allow both pure text reflections and image-manifest posts, eliminating the artificial block on text-only community interactions.
 
 The existing media reviewer now adds a bounded, read-only `wardrobe.source.inspect`
 execution receipt to `pdca/media_readiness.json`. The deployment sets
