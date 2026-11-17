@@ -5,6 +5,7 @@ on:
       - "integrations/wow/companion_suite/**"
       - "integrations/wow/AgentOSWoW/**"
       - "integrations/wow/AgentOSWoW_R001/**"
+      - "agentos_node/wow_slot_publisher.py"
       - "scripts/wow_companion_*.py"
       - "tests/test_wow_companion_*.py"
       - ".github/workflows/wow-companion-suite-contract.yml"
@@ -20,7 +21,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Verify suite and AI reply contracts
-        run: python -m unittest tests.test_wow_companion_suite tests.test_wow_companion_reply tests.test_wow_companion_byok tests.test_wow_companion_ingress tests.test_wow_companion_slot tests.test_wow_companion_client_candidate tests.test_wow_companion_frames tests.test_wow_companion_receiver tests.test_wow_companion_bridge_adapter -v
+        run: python -m unittest tests.test_wow_companion_suite tests.test_wow_companion_reply tests.test_wow_companion_byok tests.test_wow_companion_ingress tests.test_wow_companion_slot tests.test_wow_companion_client_candidate tests.test_wow_companion_frames tests.test_wow_companion_receiver tests.test_wow_companion_bridge_adapter tests.test_wow_companion_publisher -v
       - name: Verify plans are dry-run only
         run: |
           python scripts/wow_companion_suite.py --profile minimal > /tmp/wow-plan.json
