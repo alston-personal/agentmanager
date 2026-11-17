@@ -57,3 +57,7 @@ Previous PR #2339 branch diverged as main advanced. A non-rewriting merge of cur
 ## Host-local question gateway
 
 `scripts/wow_companion_ingress.py` implements typed, local-host-only `ai.ask` ingress as a **library callback**, not a new HTTP server or pixel transport. A trusted host session verifier must return the boolean `True`, and the API credential is obtained through an injected host callback. Requests have bounded session, ID and question fields, deny unknown executable fields and game commands, and enforce a finite replay fence before provider billing. The BYOK provider is restricted to `ui.answer` and cannot issue waypoints. This does not yet connect to the client; the transport remains under the #2135 source migration. No persistent credential storage or trusted local session capture is present.
+
+## One-shot reply-slot serialization
+
+`scripts/wow_companion_slot.py` produces a strictly data-only `AgentOSWoWReplySlot` Lua assignment for an `ui.answer` after `validate_reply` correlation. Every UTF-8 byte of dynamic text is encoded as a decimal Lua escape to prevent executable source injection. No disk writing, in-game loading, live Bridge, verified Node authorization or rendering is implemented in this slice. The existing #2135 Lua parser recognizes only its status/account schemas and **must be extended and verified** before an answer appears in WoW. Waypoint actions remain blocked until the trusted Nav Assist adapter is integrated. Tests are in `tests/test_wow_companion_slot.py`.
