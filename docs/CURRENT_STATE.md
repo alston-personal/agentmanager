@@ -1,3 +1,26 @@
+## 2026-11-17 — #1682 Role task handoff bus with ACK handshake, priority queues, and dynamic registry-driven PDCA
+
+1. **Role task handoff bus with bidirectional ACK protocol**:
+   - Implemented `agent_core/role_handoff_bus.py` governing inter-role task handoffs (`agentos.role-task-handoff/v1`).
+   - Supports 4-stage lifecycle: `DISPATCHED -> ACKNOWLEDGED -> IN_PROGRESS -> COMPLETED`.
+   - Upper hand dispatches task payload with priority weight (P0 > P1 > ... > P9); downstream role acknowledges upon waking and queues tasks into a prioritized local queue (`get_prioritized_queue_for_role`).
+   - Covered by unit tests in `tests/test_role_handoff_bus.py`.
+2. **Dynamic registry-driven PDCA execution (Base Role compliance)**:
+   - Refactored `scripts/role_pdca_runner.py --role all` to dynamically discover active roles from `.agent/roles/registry.yaml`.
+   - Eliminated hardcoded role arrays; any newly approved role inheriting from `core.root` automatically joins the PDCA heartbeat loop and processes handoff ACKs without manual crontab edits.
+
+---
+
+## 2026-11-17 — #1682 Universal Role PDCA Runner ecosystem expansion and 23-role awakening
+
+1. **Ecosystem-wide PDCA execution expansion**:
+   - Expanded `scripts/role_pdca_runner.py --role all` to run all 22 active guardian and project roles (including Venus, Themis, Gateway Steward, DNS Steward, Port Steward, Weaver, Whisperer, Zeus Writer, YouTube Manager, Spec Steward, Constitution Keeper, Cartographer, Memory Archivist, Academic Researcher, Chronicler, Role Steward, Cangxuan, and Geek).
+   - Awakened all 16 previously dormant roles (cycles had been stalled at Cycle 2 for 8–11 days) into continuous 10-minute crontab cadence, restoring live heartbeat parity across all 23 roles in `system_quality_sentinel.py`.
+2. **Mio persistent browser session diagnostics**:
+   - Diagnosed Mio Threads browser supervisor returning `LOGIN_REQUIRED`, identifying the root cause of blocked Threads external exploration and bare-text posts.
+
+---
+
 ## 2026-11-17 — #1682 System Quality Sentinel pantheon vital signs audit and role capabilities E2E testing
 
 1. **Pantheon vital signs and stagnation guard**:
