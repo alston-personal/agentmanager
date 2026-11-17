@@ -46,7 +46,7 @@ def validate_reply(value, expected_request_id):
         raise ReplyValidationError("invalid reply fields")
     if value["schema"] != SCHEMA or _id(value["request_id"]) != _id(expected_request_id):
         raise ReplyValidationError("schema or request correlation mismatch")
-    if value["category"] not in _CATEGORIES:
+    if not isinstance(value["category"], str) or value["category"] not in _CATEGORIES:
         raise ReplyValidationError("invalid category")
     answer = _text(value["answer"], "answer", 1200)
     sources = value["sources"]
@@ -63,7 +63,7 @@ def validate_reply(value, expected_request_id):
             raise ReplyValidationError("source must be HTTPS without credentials")
         clean_sources.append({"title": title, "url": url})
     action = value["action"]
-    if not isinstance(action, dict) or action.get("type") not in _ACTIONS:
+    if not isinstance(action, dict) or not isinstance(action.get("type"), str) or action["type"] not in _ACTIONS:
         raise ReplyValidationError("unsupported action")
     if action["type"] == "ui.answer":
         if set(action) != {"type"}:
