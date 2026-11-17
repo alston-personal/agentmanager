@@ -68,6 +68,34 @@ class QuestionReceiverTests(unittest.TestCase):
         receiver.accept(first[0])
         self.assertEqual(receiver.accept(second[1])["status"], "REJECTED")
 
+    def test_captured_question_reaches_existing_safe_answer_pipeline(self):
+        from scripts.wow_companion_ingress import CompanionQuestionGateway
+        from scripts.wow_companion_reply import SCHEMA
+        from scripts.wow_companion_slot import render_companion_slot
+
+        def provider(question, request_id, key):
+            self.assertEqual(question, "Where is my mage trainer?")
+            self.assertEqual(key, "in-memory-test-key")
+            return {
+                "schema": SCHEMA, "request_id": request_id,
+                "category": "general", "answer": "Ask a city guard.",
+                "sources": [], "action": {"type": "ui.answer"}
+            }
+
+        receiver = QuestionFrameReceiver()
+        result = receiver.accept(self._frames("Where is my mage trainer?", 52)[0])
+        self.assertEqual(result["status"], "QUESTION_REASSEMBLED")
+        gateway = CompanionQuestionGateway(
+            lambda session: session == self.SESSION.hex(),
+            lambda: "in-memory-test-key", provider=provider
+        )
+        envelope = gateway.handle(result["request"])
+        self.assertEqual(envelope["status"], "OK")
+        lua_data = render_companion_slot(envelope["reply"], "ask-52")
+        self.assertIn(b"AgentOSWoWReplySlot", lua_data)
+        self.assertNotIn(b"in-memory-test-key", lua_data)
+        self.assertEqual(gateway.handle(result["request"])["reason"], "DUPLICATE_REQUEST")
+
     def test_capture_progress_is_not_bridge_authorization(self):
         frames = self._frames("x" * 80)
         state = QuestionFrameReceiver().accept(frames[0])
