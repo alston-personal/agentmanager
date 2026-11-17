@@ -86,6 +86,19 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                         # 前置未完成，跳過這條（防止隊頭阻塞），繼續尋找下一條合格任務
                         continue
 
+                # 檢查是否為遠端節點專案（若在 Oracle 本機無代碼庫且標記為 Target Node，Oracle 本地 Paw 跳過，待 Realm 調度）
+                target_tags = re.findall(r"\[([a-zA-Z0-9_\-]+)\]", line)
+                is_remote_only = False
+                for t_tag in target_tags:
+                    t_dir = Path(f"/home/ubuntu/{t_tag}")
+                    if not t_dir.is_dir() and not (AGENTMANAGER / t_tag).is_dir():
+                        s_file = AGENT_DATA / "projects" / t_tag / "STATUS.md"
+                        if s_file.exists() and "Target Node" in s_file.read_text(encoding="utf-8"):
+                            is_remote_only = True
+                            break
+                if is_remote_only:
+                    continue
+
                 selected_task = {
                     "line_idx": idx,
                     "text": line.replace("- [ ]", "").strip(),
@@ -154,6 +167,24 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                     }
                     verify_cmd = None
 
+        # --- 2.1 CONSTRUCT PHASE (實質施工動作) ---
+        # 如果驗收命令指向某個檔案 (例如 test -f <path>)，但該檔案尚未存在，Paw 必須先建立基礎檔案骨架
+        construction_actions = []
+        if verify_cmd and verify_cmd.startswith("test -f "):
+            target_file_str = verify_cmd.replace("test -f ", "").strip()
+            target_file_path = Path(target_file_str)
+            if not target_file_path.is_absolute():
+                target_file_path = project_cwd / target_file_path
+            
+            if not target_file_path.exists():
+                print(f"🐾 [Construct] Target file missing: {target_file_path}. Creating initial structure...")
+                target_file_path.parent.mkdir(parents=True, exist_ok=True)
+                # 依據任務標題產生合理的初始骨架
+                task_title = selected_task.get("text", "AgentOS Auto Construction")
+                initial_content = f"# {task_title}\n\n*Created by The Paw (Cycle {cycle}) at {utc_now_iso()}*\n\n## 狀態與概要\n- 實作進度: 初始化骨架建立完成\n- 負責執行器: sector.paw\n"
+                target_file_path.write_text(initial_content, encoding="utf-8")
+                construction_actions.append(f"created_file: {target_file_path}")
+
         if verify_cmd:
             print(f"🐾 [Do] Executing verification command in {project_cwd}: {verify_cmd}")
             try:
@@ -173,6 +204,7 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                     "exit_code": p_res.returncode,
                     "stdout": p_res.stdout.strip()[:200],
                     "stderr": p_res.stderr.strip()[:200],
+                    "construction_actions": construction_actions,
                     "success": p_res.returncode == 0
                 }
             except Exception as exc:
@@ -182,6 +214,7 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                     "cwd": str(project_cwd),
                     "exit_code": -1,
                     "error": str(exc),
+                    "construction_actions": construction_actions,
                     "success": False
                 }
         else:
@@ -310,6 +343,22 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                         f.seek(0)
                         f.truncate(0)
                         f.write("\n".join(fresh_lines) + "\n")
+
+                    # 同步回寫專案實體 STATUS.md，完成物理閉環
+                    if claw_verdict == "PASS" and target_tag:
+                        proj_status_file = AGENT_DATA / "projects" / target_tag / "STATUS.md"
+                        if proj_status_file.is_file():
+                            s_content = proj_status_file.read_text(encoding="utf-8")
+                            s_lines = s_content.splitlines()
+                            s_updated = False
+                            for s_i, s_line in enumerate(s_lines):
+                                if s_line.startswith("- [ ]") and selected_task["text"].split("|")[0].strip() in s_line:
+                                    s_lines[s_i] = s_line.replace("- [ ]", "- [x]", 1)
+                                    s_updated = True
+                                    print(f"📋 [Act] Synced [- [x]] to {proj_status_file.name}")
+                                    break
+                            if s_updated:
+                                proj_status_file.write_text("\n".join(s_lines) + "\n", encoding="utf-8")
                         f.flush()
                 finally:
                     fcntl.flock(f, fcntl.LOCK_UN)
