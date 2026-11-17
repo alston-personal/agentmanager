@@ -81,3 +81,9 @@ The Lua consumer now parses a distinct `agentos.wow.companion.reply/v1` data-onl
 The 200-cell RGB strip used by the existing candidate UI always includes trailing unused cells in an actual screen capture. The protocol decoder now accepts exact **zero-only padding** after a valid packet and fails closed for nonzero trailing cells or malformed checksum. `scripts/wow_companion_receiver.py` accepts one captured frame at a time into one bounded in-flight question, with strict sequential part index, common request/session identifiers, maximum part count and expiry; errors discard partial state.
 
 `PART_CAPTURED` is **not a game ACK**. Without an authenticated, bidirectional host-to-game acknowledgement, it is unsafe to send multiple timed frames and assume they arrived. Do not enable the Lua Ask button or announce successful delivery until the capture driver/pacing, game-window identification and a verified acknowledgement model have real-game tests and rollback coverage.
+
+## Manual Lua diagnostic emitter (source candidate)
+
+The ported `integrations/wow/AgentOSWoW/AgentOSWoW.lua` now has a **Stage question** diagnostic control, together with a **Show next frame** control. This is user-stepped RGB frame visualization for validating the existing packet codec; it is not an automatic delivery mechanism. The staged question is limited to 500 UTF-8 bytes and broken into 54-byte chunks. Every part is encoded with the existing magic bytes, 3-bit cells, an 8-byte correlation session, a numeric question ID, part index/count, and checksum. No game authority is inferred from the session or checksum.
+
+The controls explicitly report that the Bridge is unverified and never announce a successful host capture, model call, or authenticated request. The actual game-to-host capture driver, feedback/acknowledgment, secure Windows API credential store, automatic pacing and live playtest remain blocked. Do not advertise this candidate as usable in-game AI chat.
