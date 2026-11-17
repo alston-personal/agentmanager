@@ -41,6 +41,34 @@ class QuestionBridgeAdapter:
             "status": "SLOT_READY",
             "request_id": request["request_id"],
             "slot_bytes": payload,
+            "canonical_reply": result["reply"],
             "published": False,
+            "game_received": False,
+        }
+
+    def accept_and_publish(self, rgb_cells, slot_dir):
+        """Explicit opt-in disk publication after trusted host verification.
+
+        Does not capture the screen or prove that the running WoW AddOn read
+        the slot. No input from game pixels can select an output directory.
+        """
+        prepared = self.accept_capture(rgb_cells)
+        if prepared.get("status") != "SLOT_READY":
+            return prepared
+        from agentos_node.wow_slot_publisher import (
+            SlotPublishError, publish_companion_answer,
+        )
+        try:
+            result = publish_companion_answer(
+                prepared["canonical_reply"],
+                slot_dir,
+                expected_request_id=prepared["request_id"],
+            )
+        except SlotPublishError:
+            return {"status": "UNAVAILABLE", "reason": "SLOT_PUBLISH_REJECTED"}
+        return {
+            "status": result["status"],
+            "request_id": prepared["request_id"],
+            "published": True,
             "game_received": False,
         }
