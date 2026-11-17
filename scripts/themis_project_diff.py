@@ -216,6 +216,88 @@ def get_recent_artifacts(logic_dir: Optional[Path], data_dir: Optional[Path], si
     return sorted(artifacts, key=lambda x: x["mtime"], reverse=True)[:15]
 
 
+
+def extract_project_mission(project_name: str, data_dir: Optional[Path], logic_dir: Optional[Path]) -> Dict[str, Any]:
+    """提煉專案之核心定位、用途說明、技術架構契約與當前衝刺焦點 (防偏離審計)。"""
+    mission = {
+        "title": None,
+        "purpose": None,
+        "current_focus": None,
+        "tech_contract": None,
+        "working_summary": None,
+    }
+
+    # 1. STATUS.md 解析
+    if data_dir and (data_dir / "STATUS.md").exists():
+        try:
+            content = (data_dir / "STATUS.md").read_text(encoding="utf-8")
+            lines = content.splitlines()
+
+            for l in lines:
+                if l.startswith("# Project Status:") or l.startswith("# "):
+                    mission["title"] = l.lstrip("#").strip()
+                    break
+
+            for l in lines:
+                if "**Last Status**" in l:
+                    parts = [p.strip() for p in l.split("|")]
+                    if len(parts) >= 3:
+                        mission["purpose"] = parts[2]
+                        break
+
+            curr_sec = None
+            sections = {}
+            for l in lines:
+                if l.startswith("## "):
+                    curr_sec = l[3:].strip()
+                    sections[curr_sec] = []
+                elif curr_sec:
+                    sections[curr_sec].append(l)
+
+            for sec, slines in sections.items():
+                s_low = sec.lower()
+                sec_text = "\n".join(slines).strip()
+                if any(k in s_low for k in ("sprint", "focus", "目前進度")):
+                    mission["current_focus"] = sec_text[:450]
+                elif any(k in s_low for k in ("working summary", "核心定位", "專案性質")):
+                    mission["working_summary"] = sec_text[:450]
+        except Exception:
+            pass
+
+    # 2. MANIFESTO.md / ARCHITECTURE.md 解析技術合約
+    manifesto_file = None
+    for d in (logic_dir, data_dir):
+        if d and (d / "MANIFESTO.md").exists():
+            manifesto_file = d / "MANIFESTO.md"
+            break
+    if manifesto_file:
+        try:
+            m_lines = manifesto_file.read_text(encoding="utf-8").splitlines()
+            arch_contracts = []
+            for l in m_lines:
+                clean = l.strip()
+                if clean.startswith("- **") or clean.startswith("- "):
+                    arch_contracts.append(clean)
+            if arch_contracts:
+                mission["tech_contract"] = "\n".join(arch_contracts[:4])
+        except Exception:
+            pass
+
+    if not mission["purpose"] and logic_dir and (logic_dir / "README.md").exists():
+        try:
+            r_lines = (logic_dir / "README.md").read_text(encoding="utf-8").splitlines()
+            desc = []
+            for l in r_lines:
+                if l.startswith("#"): continue
+                if l.strip(): desc.append(l.strip())
+                if len(desc) >= 3: break
+            if desc:
+                mission["purpose"] = " ".join(desc)[:350]
+        except Exception:
+            pass
+
+    return mission
+
 def capture_project_snapshot(project_name: str, data_root: Path = AGENT_DATA_DEFAULT) -> Dict[str, Any]:
     """獲取單一專案的當前天平快照。"""
     data_dir, logic_dir = find_project_dirs(project_name, data_root)
@@ -227,11 +309,13 @@ def capture_project_snapshot(project_name: str, data_root: Path = AGENT_DATA_DEF
     git_info = get_git_status(logic_dir) if logic_dir else {"is_git": False}
     recent_files = get_recent_artifacts(logic_dir, data_dir)
 
+    mission = extract_project_mission(project_name, data_dir, logic_dir)
     return {
         "project": project_name,
         "timestamp": datetime.now().astimezone().isoformat(),
         "has_logic_repo": logic_dir is not None,
         "has_data_repo": data_dir is not None,
+        "mission": mission,
         "status": parsed_status,
         "symlink_health": symlink_health,
         "git": git_info,
@@ -294,6 +378,7 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
     git = current.get("git", {})
     health = current.get("symlink_health", {})
 
+    mission = current.get("mission", {})
     lines = [
         f"# ⚖️ 忒彌斯專案時序審計報告: `{proj}`",
         f"**審計時間**：`{current.get('timestamp')}`  ",
@@ -301,10 +386,31 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
         "",
         "---",
         "",
-        "## 🏗️ 1. 架構合規與身心健康 (Architecture & Symlink Bridge)",
+        "## 🧭 1. 專案願景與定位契約 (Mission & Architecture Contract)",
+    ]
+
+    if mission.get("title"):
+        lines.append(f"- **專案全名**：`{mission['title']}`")
+    if mission.get("purpose"):
+        lines.append(f"- **🎯 核心用途與目標**：{mission['purpose']}")
+    if mission.get("current_focus"):
+        lines.append(f"- **🧭 當前衝刺焦點**：\n{mission['current_focus']}")
+    if mission.get("working_summary"):
+        lines.append(f"- **🔍 核心工作摘要 (Working Summary)**：\n{mission['working_summary']}")
+    if mission.get("tech_contract"):
+        lines.append(f"- **🛠️ 技術棧與架構手段 (Architecture Contract)**：\n{mission['tech_contract']}")
+
+    if not any(mission.values()):
+        lines.append("> ℹ️ 此專案尚未定義清晰之 MANIFESTO.md 或 STATUS.md 願景區塊。")
+
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## 🏗️ 2. 架構合規與身心健康 (Architecture & Symlink Bridge)",
         f"- **代碼倉庫 (Logic)**：`{'已建立 (/home/ubuntu/' + proj + ')' if current.get('has_logic_repo') else '無獨立代碼目錄'}`",
         f"- **資料中心 (Data)**：`{'已存在 (/home/ubuntu/agent-data/projects/' + proj + ')' if current.get('has_data_repo') else '未建檔'}`",
-    ]
+    ])
 
     if health.get("violations"):
         lines.append("- ⚠️ **合規警示 (Violations)**：")
@@ -323,7 +429,7 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
     lines.append("---")
     lines.append("")
 
-    lines.append("## 📋 2. 待辦任務與驗收狀態 (Tasks & Milestones)")
+    lines.append("## 📋 3. 待辦任務與驗收狀態 (Tasks & Milestones)")
     lines.append(f"- **進行中待辦 (Open)**：`{c_stat.get('open_count', 0)}` 項")
     lines.append(f"- **已完成任務 (Closed)**：`{c_stat.get('closed_count', 0)}` 項")
     lines.append(f"- **具備驗收標記 (With AC)**：`{c_stat.get('ac_count', 0)}` 項")
@@ -351,7 +457,7 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
     artifacts = current.get("recent_artifacts", [])
     lines.append("---")
     lines.append("")
-    lines.append("## 📦 3. 新近實體產出物歷程 (Recent Artifacts Modified)")
+    lines.append("## 📦 4. 新近實體產出物歷程 (Recent Artifacts Modified)")
     if artifacts:
         lines.append("| 領域 | 相對路徑 | 異動時間 | 大小 |")
         lines.append("| :--- | :--- | :--- | :--- |")
@@ -364,7 +470,7 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
         lines.append("")
         lines.append("---")
         lines.append("")
-        lines.append("## 📜 4. 最新活動日誌 (Activity Log)")
+        lines.append("## 📜 5. 最新活動日誌 (Activity Log)")
         for log in c_stat["activity_log"]:
             lines.append(f"- {log}")
 

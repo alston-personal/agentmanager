@@ -27,7 +27,7 @@ This change introduces:
 1. `recon_ledger.json` tracking under `$AGENT_DATA_ROOT/personas/sector-hermes/recon_ledger.json` (`agentos.hermes-recon-ledger/v1`), recording discovered repositories, star metrics, tiers, categories, knowledge writeups, and ingested skill paths (e.g. `Leonxlnx/taste-skill`).
 2. Auditing of `recon_ledger.json` in `HermesReconWorker.do()` in `agent_core/base_pdca.py`, linking periodic PDCA execution to actual intelligence ingestion.
 3. Reporting of Hermes intelligence outputs in `scripts/themis_status_diff.py` under the `Roles & Executors` section (`情資成果: 共引進 N 項武器 (最新: ...)`).
-4. Project-level temporal delta diff command `/project-diff` (`themis.project.diff`) supporting dual-mode invocation: omitting project name outputs a concise ecosystem-wide status delta across all islands (`run_all_projects_summary_diff`), while specifying a project displays deep artifact and milestone audit (`format_project_markdown_report`). Registered in `.agentos/commands/project-diff.json`, authorized in `agentos_node/bootstrap_control.py`, and verified in `tests/test_agentos_command_intent.py`.
+4. Project-level temporal delta diff command `/project-diff` (`themis.project.diff`) supporting dual-mode invocation: omitting project name outputs a concise ecosystem-wide status delta across all islands (`run_all_projects_summary_diff`), while specifying a project displays deep artifact, milestone audit, and project mission / architecture contract alignment (`extract_project_mission`). Registered in `.agentos/commands/project-diff.json`, authorized in `agentos_node/bootstrap_control.py`, and verified in `tests/test_agentos_command_intent.py`.
 
 ---
 
