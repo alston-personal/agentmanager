@@ -17,6 +17,11 @@ class BranchConvergencePathRiskTest(unittest.TestCase):
         self.assertEqual(classify("install-agentos.ps1"), "RED")
         self.assertTrue(audit(["install-agentos.ps1"])["requires_governed_review"])
 
+    def test_wow_companion_integration_is_red(self):
+        path = "integrations/wow/companion_suite/manifest.json"
+        self.assertEqual(classify(path), "RED")
+        self.assertTrue(audit([path])["requires_governed_review"])
+
     def test_content_continues(self):
         self.assertEqual(classify("stories/chapter.md"), "GREEN")
 

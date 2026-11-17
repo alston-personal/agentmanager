@@ -1,0 +1,5 @@
+## Interface: 16001
+## Title: AgentOS Read-only Reply Slot 001
+## Notes: Offline one-shot response slot; WoW Forever candidate only
+## LoadOnDemand: 1
+Reply.lua

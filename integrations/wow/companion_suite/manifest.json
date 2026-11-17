@@ -1,0 +1,276 @@
+{
+  "schema": "agentos.wow-companion-suite/v1",
+  "edition": "forever",
+  "status": "candidate-not-live-verified",
+  "constraints": {
+    "third_party_distribution": "metadata-only; no repackaging without license verification",
+    "combat_automation": "prohibited",
+    "secrets": "host-credential-store-only",
+    "install": "dry-run-only-until-runtime-and-game-verification"
+  },
+  "modules": [
+    {
+      "id": "companion-core",
+      "name": "Companion Core",
+      "owner": "first-party",
+      "required": true,
+      "default": true,
+      "provides": [
+        "ui.shell",
+        "capability.registry"
+      ]
+    },
+    {
+      "id": "ai-secretary",
+      "name": "AI Secretary",
+      "owner": "first-party",
+      "required": true,
+      "default": true,
+      "requires": [
+        "companion-core"
+      ],
+      "provides": [
+        "ai.ask",
+        "guide.lookup"
+      ],
+      "note": "BYOK/local/AgentOS provider routing is planned; never store keys in Lua or SavedVariables"
+    },
+    {
+      "id": "companion-bridge",
+      "name": "Local Companion Bridge",
+      "owner": "first-party-host",
+      "required": true,
+      "default": true,
+      "requires": [
+        "companion-core"
+      ],
+      "provides": [
+        "model.router",
+        "game.ui.reply"
+      ],
+      "note": "Local host process required; not an in-game AddOn"
+    },
+    {
+      "id": "nav-assist",
+      "name": "WoW Nav Assist",
+      "owner": "first-party",
+      "required": true,
+      "default": true,
+      "requires": [
+        "companion-core"
+      ],
+      "provides": [
+        "map.waypoint",
+        "map.overlay"
+      ]
+    },
+    {
+      "id": "buff-assist",
+      "name": "Buff Assist",
+      "owner": "first-party",
+      "required": false,
+      "default": true,
+      "requires": [
+        "companion-core"
+      ],
+      "provides": [
+        "buff.missing.highlight"
+      ],
+      "note": "Only informational overlays and player-triggered spells"
+    },
+    {
+      "id": "combat-assist",
+      "name": "Combat Assist",
+      "owner": "first-party",
+      "required": false,
+      "default": false,
+      "requires": [
+        "companion-core"
+      ],
+      "provides": [
+        "combat.rotation.hint"
+      ],
+      "note": "No combat automation or dynamic protected actions"
+    },
+    {
+      "id": "tomtom",
+      "name": "TomTom",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "map.waypoint.external"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "handynotes",
+      "name": "HandyNotes",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "map.points.external"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "questie",
+      "name": "Questie",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "quest.external"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "leatrix-maps",
+      "name": "Leatrix Maps",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "map.style"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "moveany",
+      "name": "MoveAny",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "ui.move"
+      ],
+      "conflicts": [
+        "elvui"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "bartender4",
+      "name": "Bartender4",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "ui.actionbar"
+      ],
+      "conflicts": [
+        "elvui"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "elvui",
+      "name": "ElvUI",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "ui.full"
+      ],
+      "conflicts": [
+        "bartender4",
+        "moveany"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "baganator",
+      "name": "Baganator",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "bag.search"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "details",
+      "name": "Details!",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "combat.statistics"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "dbm",
+      "name": "Deadly Boss Mods",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "combat.bossalerts"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "rarescanner",
+      "name": "RareScanner",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "explore.rares"
+      ],
+      "license_status": "unverified"
+    },
+    {
+      "id": "gathermate2",
+      "name": "GatherMate2",
+      "owner": "third-party",
+      "required": false,
+      "default": false,
+      "provides": [
+        "explore.gather"
+      ],
+      "license_status": "unverified"
+    }
+  ],
+  "profiles": {
+    "minimal": [
+      "companion-core",
+      "ai-secretary",
+      "companion-bridge",
+      "nav-assist"
+    ],
+    "standard": [
+      "companion-core",
+      "ai-secretary",
+      "companion-bridge",
+      "nav-assist",
+      "buff-assist",
+      "leatrix-maps",
+      "baganator"
+    ],
+    "explorer": [
+      "companion-core",
+      "ai-secretary",
+      "companion-bridge",
+      "nav-assist",
+      "buff-assist",
+      "tomtom",
+      "handynotes",
+      "questie",
+      "rarescanner",
+      "gathermate2"
+    ],
+    "combat": [
+      "companion-core",
+      "ai-secretary",
+      "companion-bridge",
+      "nav-assist",
+      "combat-assist",
+      "details",
+      "dbm"
+    ]
+  }
+}
