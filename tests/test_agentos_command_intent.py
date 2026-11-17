@@ -71,5 +71,34 @@ class CommandIntentTests(unittest.TestCase):
             bc._execute(bc.ACTION_COMMAND_INVOKE,"a"*40,
                         params={"command":"/evil","command_action":"themis.inventory.diff"})
 
+    def test_project_diff_resolves_and_executes(self):
+        from scripts.resolve_agentos_command import resolve_command
+        from agentos_node import bootstrap_control as bc
+        result = resolve_command("/project-diff")
+        self.assertEqual(result["action"], "themis.project.diff")
+        self.assertEqual(result["dispatch"]["payload"]["command_action"], "themis.project.diff")
+
+        good = {"command": "/project-diff", "command_action": "themis.project.diff", "project": "zeus-writer"}
+        fake = {
+            "schema": "agentos.themis-project-diff/v1",
+            "steward": "governance.themis_command_steward",
+            "project": "zeus-writer",
+            "current": {"has_logic_repo": True},
+            "delta": {"has_baseline": True},
+        }
+        with patch("scripts.themis_project_diff.run_project_diff", return_value=(fake, "report")) as mock:
+            res = bc._execute(bc.ACTION_COMMAND_INVOKE, "a"*40, params=good)
+            self.assertTrue(res["ok"])
+            self.assertEqual(res["receipt"]["report_markdown"], "report")
+            self.assertEqual(res["receipt"]["project"], "zeus-writer")
+            mock.assert_called_once_with("zeus-writer")
+
+    def test_project_diff_rejects_invalid_project_name(self):
+        from agentos_node import bootstrap_control as bc
+        bad = {"command": "/project-diff", "command_action": "themis.project.diff", "project": "bad;injection"}
+        with self.assertRaises(ValueError):
+            bc._execute(bc.ACTION_COMMAND_INVOKE, "a"*40, params=bad)
+
 if __name__=="__main__":
     unittest.main()
+

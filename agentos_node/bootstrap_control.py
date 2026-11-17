@@ -230,7 +230,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     elif action == ACTION_VISION_STUDIO_PRODUCE:
         allowed_params={"source_commit","project_id"}
     elif action == ACTION_COMMAND_INVOKE:
-        allowed_params={"source_commit","command","command_action"}
+        allowed_params={"source_commit","command","command_action","project"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
         allowed_params={"source_commit","job_type"}
     elif action == ACTION_EXECUTOR_JOB_INSPECT:
@@ -282,8 +282,15 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     if action == ACTION_COMMAND_INVOKE:
         command=str(params.get("command") or "")
         command_action=str(params.get("command_action") or "")
-        if command!="/status-diff" or command_action!="themis.inventory.diff":
+        if (command, command_action) not in {
+            ("/status-diff", "themis.inventory.diff"),
+            ("/project-diff", "themis.project.diff"),
+        }:
             raise ValueError("registered command is not authorized for this runtime action")
+        if command == "/project-diff":
+            project=str(params.get("project") or "")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-_]{0,63}", project):
+                raise ValueError("invalid project name for /project-diff")
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -1043,31 +1050,47 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         params=params or {}
         command=str(params.get("command") or "")
         command_action=str(params.get("command_action") or "")
-        if (command,command_action)!=("/status-diff","themis.inventory.diff"):
+        if (command, command_action) == ("/status-diff", "themis.inventory.diff"):
+            from scripts.themis_status_diff import run_inventory_diff
+            result,report=run_inventory_diff(save=True)
+            return {
+                "ok": True,
+                "source_commit": source_commit,
+                "command": command,
+                "action": command_action,
+                "receipt": {
+                    "schema":result["schema"],
+                    "steward":result["steward"],
+                    "projects_summary":result["current"]["projects_summary"],
+                    "git":result["current"]["git"],
+                    "atlas":result["current"]["atlas"],
+                    "delta":result["delta"],
+                    "report_markdown":report[:8000],
+                },
+                "steps":[{"step":"themis_status_diff","returncode":0,"stdout":"themis_status_diff=PASS\n","stderr":""}],
+            }
+        elif (command, command_action) == ("/project-diff", "themis.project.diff"):
+            from scripts.themis_project_diff import run_project_diff
+            project=str(params.get("project") or "")
+            result,report=run_project_diff(project)
+            return {
+                "ok": True,
+                "source_commit": source_commit,
+                "command": command,
+                "action": command_action,
+                "receipt": {
+                    "schema":result["schema"],
+                    "steward":result["steward"],
+                    "project":result["project"],
+                    "current":result["current"],
+                    "delta":result["delta"],
+                    "report_markdown":report[:8000],
+                },
+                "steps":[{"step":"themis_project_diff","returncode":0,"stdout":"themis_project_diff=PASS\n","stderr":""}],
+            }
+        else:
             raise ValueError("unregistered or unsupported command")
-        # The trusted runtime selects the installed Themis implementation;
-        # never use any caller-provided runner, path, node or shell string.
-        from scripts.themis_status_diff import run_inventory_diff
-        result,report=run_inventory_diff(save=True)
-        return {
-            "ok": True,
-            "source_commit": source_commit,
-            "command": command,
-            "action": command_action,
-            "receipt": {
-                "schema":result["schema"],
-                "steward":result["steward"],
-                "projects_summary":result["current"]["projects_summary"],
-                "git":result["current"]["git"],
-                "atlas":result["current"]["atlas"],
-                "delta":result["delta"],
-                "report_markdown":report[:8000],
-            },
-            "steps":[{"step":"themis_status_diff","returncode":0,"stdout":"themis_status_diff=PASS\\n","stderr":""}],
-        }
     if action == ACTION_GAIA_INTAKE_INSPECT:
-        # Read the installed, trusted runtime code. Do NOT execute a script
-        # fetched from caller-controlled source_commit for an inspection action.
         from scripts.gaia_proposal_intake import examine
         outcome = examine({
             "title": "Personal Device Secretary",
