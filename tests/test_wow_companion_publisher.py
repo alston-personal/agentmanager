@@ -132,6 +132,54 @@ class CompanionPublisherTests(unittest.TestCase):
         self.assertFalse(published["game_received"])
         self.assertEqual(self.target.read_bytes(), result["slot_bytes"])
 
+
+    def test_authorized_capture_to_atomic_disk_reply(self):
+        from scripts.wow_companion_bridge_adapter import QuestionBridgeAdapter
+        from scripts.wow_companion_frames import encode_question
+
+        def provider(question, request_id, credential):
+            self.assertEqual(credential, "ephemeral-test-key")
+            return {
+                "schema": SCHEMA, "request_id": request_id, "category": "general",
+                "answer": "Ask the guard.", "sources": [],
+                "action": {"type": "ui.answer"}
+            }
+
+        bridge = QuestionBridgeAdapter(
+            lambda session: session == b"abcdefgh".hex(),
+            lambda: "ephemeral-test-key",
+            provider=provider,
+        )
+        frame = encode_question(b"abcdefgh", 85, "Where is the trainer?")[0]
+        captured = frame + [0] * (200 - len(frame))
+        result = bridge.accept_and_publish(captured, self.directory)
+        self.assertEqual(result, {
+            "status": "PUBLISHED", "request_id": "ask-85",
+            "published": True, "game_received": False
+        })
+        self.assertIn(b"AgentOSWoWReplySlot", self.target.read_bytes())
+        self.assertNotIn(b"ephemeral-test-key", self.target.read_bytes())
+        self.assertEqual(
+            bridge.accept_and_publish(captured, self.directory)["reason"], "DUPLICATE_REQUEST"
+        )
+
+    def test_denied_capture_does_not_write_or_call_provider(self):
+        from scripts.wow_companion_bridge_adapter import QuestionBridgeAdapter
+        from scripts.wow_companion_frames import encode_question
+
+        bridge = QuestionBridgeAdapter(
+            lambda _: False, lambda: "ephemeral-test-key",
+            provider=lambda *args: self.fail("must not bill provider"),
+        )
+        frame = encode_question(b"abcdefgh", 86, "Hello")[0]
+        captured = frame + [0] * (200 - len(frame))
+        original = self.target.read_bytes()
+        self.assertEqual(
+            bridge.accept_and_publish(captured, self.directory)["reason"],
+            "LOCAL_SESSION_NOT_AUTHORIZED"
+        )
+        self.assertEqual(self.target.read_bytes(), original)
+
     def test_game_receipt_is_not_implied(self):
         self.assertIs(self._publish()["game_received"], False)
 
