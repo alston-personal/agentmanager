@@ -87,3 +87,9 @@ The 200-cell RGB strip used by the existing candidate UI always includes trailin
 The ported `integrations/wow/AgentOSWoW/AgentOSWoW.lua` now has a **Stage question** diagnostic control, together with a **Show next frame** control. This is user-stepped RGB frame visualization for validating the existing packet codec; it is not an automatic delivery mechanism. The staged question is limited to 500 UTF-8 bytes and broken into 54-byte chunks. Every part is encoded with the existing magic bytes, 3-bit cells, an 8-byte correlation session, a numeric question ID, part index/count, and checksum. No game authority is inferred from the session or checksum.
 
 The controls explicitly report that the Bridge is unverified and never announce a successful host capture, model call, or authenticated request. The actual game-to-host capture driver, feedback/acknowledgment, secure Windows API credential store, automatic pacing and live playtest remain blocked. Do not advertise this candidate as usable in-game AI chat.
+
+## Host capture-to-answer adapter
+
+`scripts/wow_companion_bridge_adapter.py` connects the existing bounded frame receiver to `CompanionQuestionGateway` and `render_companion_slot` through injected local-session authorization, BYOK credential getter, and provider. It creates **candidate Lua slot bytes in memory only**, returning `SLOT_READY` with explicit `published=false` and `game_received=false`. It does not open network ports, store credentials, install an AddOn, write files, impersonate the game, or mark a canonical Receipt. Source-only CI tests verify that untrusted sessions cannot incur API calls and replay cannot charge twice.
+
+To close the live loop, reuse #2135's separately governed installed-slot publisher with exact-path/atomic-write protection, add an authenticated Windows screen capture adapter, install candidate with rollback, and independently demonstrate client receipt on WoW Forever before enabling automatic question emission.
