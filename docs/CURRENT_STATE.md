@@ -1,3 +1,16 @@
+## 2026-11-17 — #1682 Paw constructive execution closure and Cerberus pipeline liveliness sentinel
+
+Investigation revealed two failure modes in autonomous role progression:
+1. **Paw constructive execution gap**: The Paw's DO phase previously executed verification commands directly without constructing missing target artifacts (e.g. running `test -f <file>` before the file exists, triggering guaranteed failures and demoting qualified tasks to blocked queues). In addition, remote-only node projects (marked with `Target Node`) blocked the Oracle-local queue.
+2. **Sentinel liveliness blind spot**: Cerberus previously checked static assets (novels, translations, ghost projects, Venus UI), but lacked pipeline stagnation detection, masking situations where open tasks existed but all workers remained idle.
+
+This change:
+- Adds target artifact initialization under `CONSTRUCT PHASE` in `scripts/role_pdca_runner.py` prior to running verification commands, and filters out remote-only projects on Oracle local runners.
+- Syncs verified task completion (`- [x]`) back to both `GLOBAL_TODO_LIST.md` and the project's canonical `STATUS.md`.
+- Implements `check_pipeline_liveliness_and_anti_stagnation()` in `scripts/system_quality_sentinel.py`, raising `PIPELINE_STAGNATED` alerts when open tasks exist but all executors remain in continuous idle loops.
+
+---
+
 ## 2026-11-16 — #1682 completion_watchdog_tick standalone sys.path resolution
 
 `scripts/completion_watchdog_tick.py` imported `approved_wow_paw_handoff`, which in turn imports `agent_core`. When executed directly without an explicit `PYTHONPATH=.`, Python raised `ModuleNotFoundError: No module named 'agent_core'`.

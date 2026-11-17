@@ -177,6 +177,50 @@ class SystemQualitySentinel:
         except Exception as e:
             self.log_error(f"執行角色真實性守門失敗: {e}")
 
+    # ── 7. 任務管線活力與停滯假待命檢測 (Pipeline Liveliness & Anti-Stagnation) ──
+    def check_pipeline_liveliness_and_anti_stagnation(self):
+        print("\n⚡ [檢查 7] 檢測任務管線活力與執行器待命假象 (Pipeline Anti-Stagnation)...")
+        # 1. 檢測 GLOBAL_TODO_LIST.md 待辦池狀況
+        global_todo_file = AGENT_DATA_ROOT / "GLOBAL_TODO_LIST.md"
+        if not global_todo_file.is_file():
+            self.log_finding("GLOBAL_TODO_LIST.md 不存在，跳過管線檢測。")
+            return
+
+        todo_content = global_todo_file.read_text(encoding="utf-8")
+        open_count = len(re.findall(r"^- \[ \]", todo_content, re.MULTILINE))
+        
+        # 檢測是否有合格隊列被清空但 Draft/Blocked 堆積過多的現象
+        has_qualified = False
+        in_qualified = False
+        for line in todo_content.splitlines():
+            if "## 🎯 Qualified Executable Tasks" in line:
+                in_qualified = True
+                continue
+            if "## ⚠️ Blocked" in line or "## ✅ Completed" in line:
+                in_qualified = False
+                break
+            if in_qualified and line.startswith("- [ ]"):
+                has_qualified = True
+                break
+
+        # 2. 檢測 The Paw 近期活動是否陷入連續純待命 (Idle Loop)
+        paw_state_file = AGENT_DATA_ROOT / "personas" / "the-paw" / "pdca" / "state.json"
+        if paw_state_file.is_file():
+            try:
+                pst = json.loads(paw_state_file.read_text(encoding="utf-8"))
+                recent = pst.get("recent_activities", [])
+                idle_count = sum(1 for act in recent[:10] if "在席待命" in act.get("task", ""))
+                if idle_count >= 8 and open_count > 0 and not has_qualified:
+                    self.log_error(
+                        f"管線活力窒息警報: 全系統有 {open_count} 項 Open 任務，但合格隊列為空，The Paw 近 10 週期有 {idle_count} 次處於待命！缺少任務細化與驗收標記。",
+                        target="task-pipeline",
+                        incident_type="PIPELINE_STAGNATED"
+                    )
+                else:
+                    self.log_finding(f"The Paw 執行器狀態正常 (合格任務在列: {has_qualified}, 總待辦: {open_count} 項)。")
+            except Exception as e:
+                self.log_finding(f"讀取 Paw 狀態失敗: {e}")
+
     def run_all(self):
         print("=" * 60)
         print("🛡️  全系統品質巡檢使 (System Quality Sentinel) 開始巡檢")
@@ -189,6 +233,7 @@ class SystemQualitySentinel:
         self.check_venus_aesthetics()
         self.check_file_conflicts_and_deadlocks()
         self.check_role_reality_guard()
+        self.check_pipeline_liveliness_and_anti_stagnation()
 
         print("\n" + "=" * 60)
         print("📋 巡檢總結報告")
