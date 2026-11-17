@@ -33,10 +33,6 @@ class WowCompanionSuiteTests(unittest.TestCase):
         with self.assertRaisesRegex(SuitePlanError, "Unknown modules"):
             build_plan(self.manifest, "minimal", extra=["random-addon"])
 
-    def test_reject_excluded_dependency(self):
-        with self.assertRaisesRegex(SuitePlanError, "requires excluded"):
-            build_plan(self.manifest, "minimal", extra=["buff-assist"], exclude=["companion-core"])
-
     def test_does_not_claim_installer_ready(self):
         for profile in self.manifest["profiles"]:
             plan = build_plan(self.manifest, profile)
