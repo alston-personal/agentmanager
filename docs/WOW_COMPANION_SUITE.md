@@ -61,3 +61,11 @@ Previous PR #2339 branch diverged as main advanced. A non-rewriting merge of cur
 ## One-shot reply-slot serialization
 
 `scripts/wow_companion_slot.py` produces a strictly data-only `AgentOSWoWReplySlot` Lua assignment for an `ui.answer` after `validate_reply` correlation. Every UTF-8 byte of dynamic text is encoded as a decimal Lua escape to prevent executable source injection. No disk writing, in-game loading, live Bridge, verified Node authorization or rendering is implemented in this slice. The existing #2135 Lua parser recognizes only its status/account schemas and **must be extended and verified** before an answer appears in WoW. Waypoint actions remain blocked until the trusted Nav Assist adapter is integrated. Tests are in `tests/test_wow_companion_slot.py`.
+
+## Game-client source migration checkpoint
+
+The original `integrations/wow/AgentOSWoW/AgentOSWoW.lua` and `.toc`, and the one-shot `AgentOSWoW_R001` LoadOnDemand data slot, were **selectively ported from draft PR #2135** to the reconciled PR #2339 working branch. The `/agentos` window retains status and account probes as source-only, unverified candidates.
+
+The Lua consumer now parses a distinct `agentos.wow.companion.reply/v1` data-only text reply with string request-ID matching, category/length/control-character checks, and one-shot consumption. **It does not establish a pending AI request ID yet**, because no authenticated game-to-host AI question transport has been integrated. The question control remains deliberately disabled; thus there is no claim of live in-game AI interaction or confirmed response. A future implementation must set `expectedAIRequestId` only for the actual player-triggered question, maintain correlation to the trusted host, and validate the transport/slot scheme against the user's actual WoW build.
+
+`tests/test_wow_companion_client_candidate.py` protects the import against loss of original account/status surfaces and accidental activation of unverified AI send. These are static source tests, not proof that Lua executed successfully in the game.
