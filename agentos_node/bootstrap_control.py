@@ -288,8 +288,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         }:
             raise ValueError("registered command is not authorized for this runtime action")
         if command == "/project-diff":
-            project=str(params.get("project") or "")
-            if not re.fullmatch(r"[a-z0-9][a-z0-9-_]{0,63}", project):
+            project=str(params.get("project") or "").strip()
+            if project and not re.fullmatch(r"[a-z0-9][a-z0-9-_]{0,63}", project):
                 raise ValueError("invalid project name for /project-diff")
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
@@ -1071,21 +1071,26 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             }
         elif (command, command_action) == ("/project-diff", "themis.project.diff"):
             from scripts.themis_project_diff import run_project_diff
-            project=str(params.get("project") or "")
-            result,report=run_project_diff(project)
+            project=str(params.get("project") or "").strip()
+            result,report=run_project_diff(project if project else None)
+            receipt = {
+                "schema": result["schema"],
+                "steward": result["steward"],
+                "report_markdown": report[:8000],
+            }
+            if "project" in result:
+                receipt["project"] = result["project"]
+                receipt["current"] = result.get("current")
+                receipt["delta"] = result.get("delta")
+            else:
+                receipt["summary"] = result.get("summary")
+                receipt["changed_projects"] = result.get("changed_projects")
             return {
                 "ok": True,
                 "source_commit": source_commit,
                 "command": command,
                 "action": command_action,
-                "receipt": {
-                    "schema":result["schema"],
-                    "steward":result["steward"],
-                    "project":result["project"],
-                    "current":result["current"],
-                    "delta":result["delta"],
-                    "report_markdown":report[:8000],
-                },
+                "receipt": receipt,
                 "steps":[{"step":"themis_project_diff","returncode":0,"stdout":"themis_project_diff=PASS\n","stderr":""}],
             }
         else:

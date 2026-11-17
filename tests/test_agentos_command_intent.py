@@ -93,6 +93,19 @@ class CommandIntentTests(unittest.TestCase):
             self.assertEqual(res["receipt"]["project"], "zeus-writer")
             mock.assert_called_once_with("zeus-writer")
 
+        # Test omitting project for summary mode
+        summary_fake = {
+            "schema": "agentos.themis-projects-summary-diff/v1",
+            "steward": "governance.themis_command_steward",
+            "summary": {"total_projects": 63},
+            "changed_projects": [],
+        }
+        with patch("scripts.themis_project_diff.run_project_diff", return_value=(summary_fake, "summary_report")) as mock_sum:
+            res_sum = bc._execute(bc.ACTION_COMMAND_INVOKE, "a"*40, params={"command": "/project-diff", "command_action": "themis.project.diff"})
+            self.assertTrue(res_sum["ok"])
+            self.assertEqual(res_sum["receipt"]["report_markdown"], "summary_report")
+            mock_sum.assert_called_once_with(None)
+
     def test_project_diff_rejects_invalid_project_name(self):
         from agentos_node import bootstrap_control as bc
         bad = {"command": "/project-diff", "command_action": "themis.project.diff", "project": "bad;injection"}

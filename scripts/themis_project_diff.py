@@ -3,11 +3,9 @@
 Themis Project Inventory & Temporal Delta Diff Engine (/project-diff)
 執掌神祇: governance.themis_command_steward (忒彌斯 · 專案天平與差分審計)
 
-提供單一專案島嶼的深度時序差分比對:
-1. 產出物清單變遷 (Artifacts Delta)
-2. 待辦任務演進 (Open/Closed TODOs & ACs)
-3. 程式碼版本歷程 (Git branch, commit, clean status)
-4. 邏輯與資料分離架構檢驗 (Symlink Bridge & Logic/Data separation)
+支援兩種模式:
+1. 全生態簡略概覽 (當未指定專案名稱時): 列出所有專案島嶼的時序消長 (Open/Closed Δ)、有變動專案與目前狀態矩陣。
+2. 單一專案深度審計 (當指定專案名稱時): 深入審計產出物清單 (Artifacts Delta)、待辦演進、Git 狀態與 Logic/Data 軟連結合規。
 """
 
 import argparse
@@ -44,7 +42,6 @@ def find_project_dirs(project_name: str, data_root: Path) -> Tuple[Optional[Path
     # 檢查邏輯目錄: /home/ubuntu/<project_name>
     logic_dir = HOME_DIR / project_name
     if not logic_dir.exists() or not logic_dir.is_dir():
-        # 若是 agentmanager 本身
         if project_name == "agentmanager":
             logic_dir = AGENTMANAGER_DEFAULT
         else:
@@ -243,7 +240,7 @@ def capture_project_snapshot(project_name: str, data_root: Path = AGENT_DATA_DEF
 
 
 def compute_project_delta(project_name: str, current: Dict[str, Any], data_root: Path) -> Dict[str, Any]:
-    """比對當前專案與全域最新/指定快照之時序差異。"""
+    """比對當前專案與基準快照之時序差異。"""
     snapshots_dir = data_root / "snapshots" / "inventory"
     delta = {
         "has_baseline": False,
@@ -256,7 +253,6 @@ def compute_project_delta(project_name: str, current: Dict[str, Any], data_root:
     if not snap_files:
         return delta
 
-    # 讀取最新基準快照
     baseline_file = snap_files[-1]
     try:
         baseline_data = json.loads(baseline_file.read_text(encoding="utf-8"))
@@ -275,7 +271,6 @@ def compute_project_delta(project_name: str, current: Dict[str, Any], data_root:
     delta["baseline_timestamp"] = baseline_data.get("timestamp", "unknown")
     delta["current_timestamp"] = current.get("timestamp", "unknown")
 
-    # 任務增減
     old_open = prev_proj.get("open_count", 0)
     new_open = c_stat.get("open_count", 0)
     old_closed = prev_proj.get("closed_count", 0)
@@ -284,7 +279,6 @@ def compute_project_delta(project_name: str, current: Dict[str, Any], data_root:
     delta["open_delta"] = new_open - old_open
     delta["closed_delta"] = new_closed - old_closed
 
-    # 比對哪些任務被完成
     old_open_todos = set(prev_proj.get("open_todos", []))
     new_open_todos = set(c_stat.get("open_todos", []))
     delta["resolved_todos"] = list(old_open_todos - new_open_todos)
@@ -329,7 +323,6 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
     lines.append("---")
     lines.append("")
 
-    # 2. 任務閉環動態
     lines.append("## 📋 2. 待辦任務與驗收狀態 (Tasks & Milestones)")
     lines.append(f"- **進行中待辦 (Open)**：`{c_stat.get('open_count', 0)}` 項")
     lines.append(f"- **已完成任務 (Closed)**：`{c_stat.get('closed_count', 0)}` 項")
@@ -349,14 +342,12 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
                 lines.append(f"  - [ ] {t}")
     lines.append("")
 
-    # 當前待辦列舉
     if c_stat.get("open_todos"):
         lines.append("### ⏳ 當前排隊待辦 (Open Tasks):")
         for t in c_stat["open_todos"]:
             lines.append(f"  - [ ] {t}")
         lines.append("")
 
-    # 3. 實體產出物異動
     artifacts = current.get("recent_artifacts", [])
     lines.append("---")
     lines.append("")
@@ -369,7 +360,6 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
     else:
         lines.append("> 48 小時內無偵測到實體文件異動。")
 
-    # 4. 活動日誌
     if c_stat.get("activity_log"):
         lines.append("")
         lines.append("---")
@@ -381,16 +371,146 @@ def format_project_markdown_report(current: Dict[str, Any], delta: Dict[str, Any
     return "\n".join(lines)
 
 
-def run_project_diff(project_name: str, data_root: Path = AGENT_DATA_DEFAULT, json_output: bool = False) -> Tuple[Dict[str, Any], str]:
+def run_all_projects_summary_diff(data_root: Path = AGENT_DATA_DEFAULT) -> Tuple[Dict[str, Any], str]:
+    """當未指定專案時，生成全生態專案島嶼的時序消長簡略摘要。"""
+    _REPO_ROOT = Path(__file__).resolve().parent.parent
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    from scripts.themis_status_diff import scan_projects
+
+    current_projects, summary = scan_projects(data_root)
+    snapshots_dir = data_root / "snapshots" / "inventory"
+    snap_files = sorted(snapshots_dir.glob("snapshot-*.json"))
+
+    baseline_data: Optional[Dict[str, Any]] = None
+    baseline_file = None
+    if snap_files:
+        baseline_file = snap_files[-1].name
+        try:
+            baseline_data = json.loads(snap_files[-1].read_text(encoding="utf-8"))
+        except Exception:
+            baseline_data = None
+
+    base_projects = baseline_data.get("projects", {}) if baseline_data else {}
+
+    changed_projects = []
+    unchanged_active = []
+    zero_todos = []
+    new_projects = []
+
+    for name, cur in sorted(current_projects.items()):
+        if name not in base_projects:
+            new_projects.append({"project": name, **cur})
+            continue
+
+        prev = base_projects[name]
+        open_delta = cur["open_count"] - prev.get("open_count", 0)
+        closed_delta = cur["closed_count"] - prev.get("closed_count", 0)
+        ac_delta = cur["ac_count"] - prev.get("ac_count", 0)
+
+        proj_entry = {
+            "project": name,
+            "has_status": cur["has_status"],
+            "open_count": cur["open_count"],
+            "closed_count": cur["closed_count"],
+            "ac_count": cur["ac_count"],
+            "open_delta": open_delta,
+            "closed_delta": closed_delta,
+            "ac_delta": ac_delta,
+            "open_todos": cur.get("open_todos", [])[:2],
+        }
+
+        if open_delta != 0 or closed_delta != 0 or ac_delta != 0:
+            changed_projects.append(proj_entry)
+        elif cur["open_count"] > 0:
+            unchanged_active.append(proj_entry)
+        else:
+            zero_todos.append(proj_entry)
+
+    # Format Markdown summary
+    timestamp = datetime.now().astimezone().isoformat()
+    lines = [
+        "# ⚖️ 忒彌斯全生態專案島嶼狀態簡報 (Projects Status Diff)",
+        f"**審計時間**：`{timestamp}`  ",
+        f"**執掌神祇**：`governance.themis_command_steward` (天規天平審計)  ",
+        f"**島嶼總數**：共 `{len(current_projects)}` 座專案島嶼  ",
+    ]
+    if baseline_file:
+        lines.append(f"**基準比對**：與快照 `{baseline_file}` (`{baseline_data.get('timestamp', 'unknown')}`) 進行時序差異比對  ")
+    lines.append("")
+    lines.append("> 💡 **提示**：若要檢視單一專案的深層產出物、Git 分支、活動日誌與身心健康，請下指令：`/project-diff [專案名稱]`")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # 1. 有變動的專案 (Active Changes)
+    lines.append("## 🚀 1. 近期有推進／消長之專案 (Projects with Progress)")
+    if changed_projects:
+        lines.append("| 專案名稱 | 進行中 (Open) | 任務消長 (Δ) | 已完成 (Closed) | 閉環消長 (Δ) | 具驗收標記 |")
+        lines.append("| :--- | :---: | :---: | :---: | :---: | :---: |")
+        for p in changed_projects:
+            od_str = f"**`{p['open_delta']:+d}`**" if p['open_delta'] != 0 else "`0`"
+            cd_str = f"**`{p['closed_delta']:+d}`**" if p['closed_delta'] != 0 else "`0`"
+            lines.append(f"| **`{p['project']}`** | `{p['open_count']}` | {od_str} | `{p['closed_count']}` | {cd_str} | `{p['ac_count']}` |")
+    else:
+        lines.append("> 自基準快照以來，尚無專案發生待辦增減。")
+    lines.append("")
+
+    # 2. 進行中但本次無消長專案 (Active Queue)
+    lines.append("## ⏳ 2. 待辦排隊中之專案島嶼 (Projects in Queue)")
+    if unchanged_active:
+        lines.append(f"共 `{len(unchanged_active)}` 個專案當前有排隊任務，部分代表列舉：")
+        lines.append("| 專案名稱 | 進行中 (Open) | 已完成 (Closed) | 排隊代表待辦 |")
+        lines.append("| :--- | :---: | :---: | :--- |")
+        for p in unchanged_active[:12]:
+            sample = p["open_todos"][0][:45] + "..." if p["open_todos"] else "無"
+            lines.append(f"| `{p['project']}` | `{p['open_count']}` | `{p['closed_count']}` | {sample} |")
+        if len(unchanged_active) > 12:
+            lines.append(f"> ...其餘 `{len(unchanged_active) - 12}` 個進行中專案省略，可透過 `/project-diff [專案名]` 查詢。")
+    else:
+        lines.append("> 全生態無排隊中之任務島嶼。")
+    lines.append("")
+
+    # 3. 新建專案島嶼 (若有)
+    if new_projects:
+        lines.append("## 🆕 3. 新開闢專案島嶼")
+        for p in new_projects:
+            lines.append(f"- **`{p['project']}`** (Open: `{p['open_count']}`, Closed: `{p['closed_count']}`)")
+        lines.append("")
+
+    lines.append("---")
+    lines.append(f"**全生態匯整**：`{summary.get('documented_projects')}` 座島嶼具備 `STATUS.md`，全域總 Open: `{summary.get('total_open')}`，總 Closed: `{summary.get('total_closed')}`。")
+
+    result = {
+        "schema": "agentos.themis-projects-summary-diff/v1",
+        "steward": "governance.themis_command_steward",
+        "timestamp": timestamp,
+        "baseline_file": baseline_file,
+        "changed_projects": changed_projects,
+        "unchanged_active_count": len(unchanged_active),
+        "zero_todos_count": len(zero_todos),
+        "new_projects": new_projects,
+        "summary": summary,
+    }
+    return result, "\n".join(lines)
+
+
+def run_project_diff(project_name: Optional[str] = None, data_root: Path = AGENT_DATA_DEFAULT, json_output: bool = False) -> Tuple[Dict[str, Any], str]:
     validate_authoritative_data_root(data_root)
-    current = capture_project_snapshot(project_name, data_root)
-    delta = compute_project_delta(project_name, current, data_root)
+
+    # 若未指定專案名稱，或傳入空字串 / "all"，則進入全生態簡略概覽模式
+    clean_name = (project_name or "").strip()
+    if not clean_name or clean_name.lower() in ("all", "summary"):
+        return run_all_projects_summary_diff(data_root=data_root)
+
+    current = capture_project_snapshot(clean_name, data_root)
+    delta = compute_project_delta(clean_name, current, data_root)
     report = format_project_markdown_report(current, delta)
 
     result = {
         "schema": "agentos.themis-project-diff/v1",
         "steward": "governance.themis_command_steward",
-        "project": project_name,
+        "project": clean_name,
         "current": current,
         "delta": delta,
     }
@@ -399,7 +519,7 @@ def run_project_diff(project_name: str, data_root: Path = AGENT_DATA_DEFAULT, js
 
 def main():
     parser = argparse.ArgumentParser(description="Themis Project-Level Temporal Delta Diff Engine (/project-diff)")
-    parser.add_argument("project", help="Name of the project island to inspect (e.g. zeus-writer, social-galaxy)")
+    parser.add_argument("project", nargs="?", default=None, help="Optional: Name of the project island (e.g. zeus-writer). Omit for full ecosystem summary.")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     parser.add_argument("--allow-non-authoritative", action="store_true", help="Allow running on non-authoritative root")
     args = parser.parse_args()
