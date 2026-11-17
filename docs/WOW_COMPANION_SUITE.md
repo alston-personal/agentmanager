@@ -69,3 +69,9 @@ The original `integrations/wow/AgentOSWoW/AgentOSWoW.lua` and `.toc`, and the on
 The Lua consumer now parses a distinct `agentos.wow.companion.reply/v1` data-only text reply with string request-ID matching, category/length/control-character checks, and one-shot consumption. **It does not establish a pending AI request ID yet**, because no authenticated game-to-host AI question transport has been integrated. The question control remains deliberately disabled; thus there is no claim of live in-game AI interaction or confirmed response. A future implementation must set `expectedAIRequestId` only for the actual player-triggered question, maintain correlation to the trusted host, and validate the transport/slot scheme against the user's actual WoW build.
 
 `tests/test_wow_companion_client_candidate.py` protects the import against loss of original account/status surfaces and accidental activation of unverified AI send. These are static source tests, not proof that Lua executed successfully in the game.
+
+## Question packet transport candidate
+
+`scripts/wow_companion_frames.py` implements a typed, 200-cell-compatible multi-part question codec aligned with the existing #2135 pixel-strip frame envelope (two magic bytes, frame ID, length, Fletcher-style checksum). It caps each part at 200 RGB cells and full UTF-8 question at 500 bytes, rejects missing/out-of-order/mixed-session frames, and yields a typed `ai.ask` request for the existing host gateway. The 8-byte session is **only a correlation label**, not an authentication token. A checksum is not a signature.
+
+**Not yet live:** Game client Lua emitter and frame pacing/capture acknowledgements are absent; the button remains disabled, and no host-to-game transport or trusted identity is implied. This prevents misleading users with an unacknowledged pixel transmit. The existing game client must pass a real WoW Forever test of its display/screen-capture compatibility before enabling questions.
