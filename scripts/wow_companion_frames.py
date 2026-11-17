@@ -58,12 +58,17 @@ def encode_pixel_frame(frame_id: int, payload: bytes) -> list[int]:
 
 
 def decode_pixel_frame(cells: list[int]) -> tuple[int, bytes]:
+    """Decode a frame, accepting only zero padding to a 200-cell capture.
+
+    The source encoder often emits fewer than 200 cells, but a screen capture
+    always sees the full strip. Any extra *nonzero* cell remains an error.
+    """
     if not isinstance(cells, list) or not 1 <= len(cells) <= MAX_CELLS:
         raise FrameError("INVALID_CELL_COUNT")
     raw = bytearray()
     acc = count = 0
     expected = None
-    for cell in cells:
+    for idx, cell in enumerate(cells):
         if type(cell) is not int or not 0 <= cell <= 7:
             raise FrameError("INVALID_PIXEL")
         acc = (acc << 3) | cell
@@ -72,22 +77,22 @@ def decode_pixel_frame(cells: list[int]) -> tuple[int, bytes]:
             count -= 8
             raw.append((acc >> count) & 255)
             acc &= (1 << count) - 1
-            if len(raw) == 2 and raw != MAGIC:
+            if len(raw) == 2 and bytes(raw) != MAGIC:
                 raise FrameError("INVALID_MAGIC")
             if len(raw) == 6:
                 length = int.from_bytes(raw[4:6], "big")
                 if not 1 <= length <= MAX_PAYLOAD:
                     raise FrameError("INVALID_LENGTH")
                 expected = 8 + length
-            if expected and len(raw) > expected:
-                raise FrameError("TRAILING_DATA")
-    if expected is None or len(raw) != expected or acc != 0:
-        raise FrameError("INCOMPLETE_FRAME")
-    body = bytes(raw[2:-2])
-    if _checksum(body) != raw[-2:]:
-        raise FrameError("BAD_CHECKSUM")
-    return int.from_bytes(raw[2:4], "big"), bytes(raw[6:-2])
-
+            if expected is not None and len(raw) == expected:
+                if acc != 0 or any(type(extra) is not int or extra != 0
+                                   for extra in cells[idx + 1:]):
+                    raise FrameError("INVALID_FRAME_PADDING")
+                body = bytes(raw[2:-2])
+                if _checksum(body) != raw[-2:]:
+                    raise FrameError("BAD_CHECKSUM")
+                return int.from_bytes(raw[2:4], "big"), bytes(raw[6:-2])
+    raise FrameError("INCOMPLETE_FRAME")
 
 def encode_question(session: bytes, question_id: int, question: str) -> list[list[int]]:
     if not isinstance(session, bytes) or len(session) != 8:
