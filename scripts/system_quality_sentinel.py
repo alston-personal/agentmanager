@@ -318,25 +318,46 @@ class SystemQualitySentinel:
             except Exception as e:
                 self.log_finding(f"Mio 外部情報庫讀取略過: {e}")
 
-        # 2. 檢測 Mio 審批通過與發布中貼文是否具備合成配圖
+        # 2. 檢測 Mio 審批通過與發布中貼文的圖文契約（依適合度配圖，純文字或含圖皆屬合法，但若含圖需附帶 manifest）
         mio_approved_dir = AGENT_DATA_ROOT / "personas" / "mio" / "approved"
         if mio_approved_dir.is_dir():
             approved_posts = list(mio_approved_dir.glob("mio-post-*.txt"))
-            missing_images = []
+            invalid_manifests = []
             for p in approved_posts:
                 img_manifest = p.with_suffix(".json")
-                if not img_manifest.is_file():
-                    missing_images.append(p.name)
-            if missing_images:
+                if img_manifest.is_file():
+                    try:
+                        data = json.loads(img_manifest.read_text(encoding="utf-8"))
+                        if not data.get("image_path") and not data.get("asset_id"):
+                            invalid_manifests.append(p.name)
+                    except Exception:
+                        invalid_manifests.append(p.name)
+            if invalid_manifests:
                 self.log_error(
-                    f"Mio 發布合規警告: 發現 {len(missing_images)} 則待發布貼文未具備專屬配圖 (未滿足含圖發布契約): {missing_images[:3]}",
+                    f"Mio 發布合規警告: 發現 {len(invalid_manifests)} 則配圖貼文之 manifest 損壞: {invalid_manifests[:3]}",
                     target="persona.mio",
-                    incident_type="MIO_POST_WITHOUT_IMAGE"
+                    incident_type="MIO_POST_INVALID_IMAGE_MANIFEST"
                 )
             else:
-                self.log_finding(f"Mio 待發布貼文圖文契約檢查通過 (共 {len(approved_posts)} 則)。")
+                self.log_finding(f"Mio 待發布貼文圖文契約檢查通過 (共 {len(approved_posts)} 則，允許靈活純文字或帶圖)。")
         else:
             self.log_finding("Mio approved 發布隊列為空 (尚無待發布排程)。")
+
+        # 3. 檢測 Mio 每日情報注入 (Trend Digest 晨讀記憶) 是否及時更新
+        trend_sink = AGENT_DATA_ROOT / "personas" / "sunlake-milkcat" / "morning_reading.json"
+        if trend_sink.is_file():
+            try:
+                trend_data = json.loads(trend_sink.read_text(encoding="utf-8"))
+                gen_date = str(trend_data.get("generated_at", ""))[:10]
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                if gen_date == today_str:
+                    self.log_finding(f"Mio 每日生活美學晨讀情報已注入 (今日 {today_str} 已更新: {trend_data.get('title', '')[:30]}...)。")
+                else:
+                    self.log_finding(f"Mio 每日生活晨讀情報暫留於 {gen_date} (待今日時段排程更新)。")
+            except Exception as e:
+                self.log_error(f"Mio 晨讀情報格式解析異常: {e}", target="persona.mio")
+        else:
+            self.log_error("Mio 每日情報檔案不存在 (缺少 morning_reading.json)", target="persona.mio")
 
     def run_all(self):
         print("=" * 60)
