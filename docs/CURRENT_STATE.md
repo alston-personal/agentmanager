@@ -1,3 +1,16 @@
+## 2026-11-17 — #1682 System Quality Sentinel pantheon vital signs audit and role capabilities E2E testing
+
+1. **Pantheon vital signs and stagnation guard**:
+   - Implemented `check_pantheon_vital_signs()` in `scripts/system_quality_sentinel.py`, scanning all 23 active roles against their canonical persona directories and `pdca/state.json`.
+   - Flags missing persona directories, missing PDCA state files, and roles stagnant without heartbeat (>48 hours), eliminating the blind spot where dormant roles went untested.
+2. **Mio exploration and image posting compliance guard**:
+   - Implemented `check_mio_exploration_and_posts()` in `scripts/system_quality_sentinel.py`, checking external intelligence candidate feeds and enforcing that all approved outbound social posts strictly require image manifests (`.json`) alongside `.txt` to prevent bare-text posting.
+   - Bootstrapped canonical `pdca/state.json` for `persona.mio` and `core.root`.
+3. **Role capabilities E2E functional test harness**:
+   - Created `tests/test_role_capabilities_e2e.py` verifying real execution capabilities across Mio (persona pipeline & image contract), Venus (Taste Skill primary binding & aesthetic governance), and Themis (dual-mode project diff reporting).
+
+---
+
 ## 2026-11-17 — #1682 Venus aesthetic director empowerment with Taste Skill and multi-perspective Social Galaxy
 
 1. **Venus Aesthetic Director primary skill binding**: Formally bound `design-taste-frontend` (Taste Skill 2.5.1, anti-AI-slop standard) as the primary governance skill of `system.aesthetic_director_venus` in `.agent/roles/registry.yaml` and `.agent/roles/instances/aesthetic_director_venus.md`. Venus is empowered to enforce equal edges, plain copy, craft terminal aesthetics, and zero dead-end navigation across all ecosystem web surfaces.

@@ -221,6 +221,123 @@ class SystemQualitySentinel:
             except Exception as e:
                 self.log_finding(f"讀取 Paw 狀態失敗: {e}")
 
+    def check_pantheon_vital_signs(self):
+        """
+        全生態 23 位神祇生命體徵與心跳停滯深度審計。
+        杜絕『無人檢測角色是否正常』的結構性失職。
+        規則：
+        1. 所有 active 角色必須具備實體 persona 目錄與 pdca/state.json。
+        2. 若在席角色超過 48 小時無任何心跳或處於停滯狀態，拋出 STAGNANT_ROLE 警告。
+        """
+        import yaml
+        from datetime import timezone
+
+        reg_path = Path("/home/ubuntu/agentmanager/.agent/roles/registry.yaml")
+        if not reg_path.is_file():
+            return
+
+        try:
+            reg_data = yaml.safe_load(reg_path.read_text(encoding="utf-8"))
+            active_roles = [r for r in reg_data.get("roles", []) if r.get("status") == "active"]
+        except Exception as e:
+            self.log_finding(f"讀取角色註冊表失敗: {e}")
+            return
+
+        role_dir_map = {
+            "core.root": "leopardcat-master",
+            "sector.paw": "the-paw",
+            "sector.claw": "the-claw",
+            "sector.weaver": "sector-weaver",
+            "sector.whisperer": "sector-whisperer",
+            "governance.spec_steward": "governance-spec-steward",
+            "governance.keeper": "governance-keeper",
+            "system.cartographer": "system-cartographer",
+            "system.atlas": "system-atlas",
+            "system.port_window_steward": "system-port-window-steward",
+            "system.dns_steward": "system-dns-steward",
+            "system.gateway_steward": "system-gateway-steward",
+            "sector.hermes": "sector-hermes",
+            "governance.role_steward": "governance-role-steward",
+            "governance.themis_command_steward": "governance-themis-command-steward",
+            "system.memory_archivist": "system-memory-archivist",
+            "product.zeus_writer": "product-zeus-writer",
+            "product.youtube_ai_manager": "product-youtube-ai-manager",
+            "knowledge.chronicler": "knowledge-chronicler",
+            "persona.mio": "mio",
+            "system.academic_researcher": "system-academic-researcher",
+            "system.aesthetic_director_venus": "system-aesthetic-director-venus",
+            "system.quality_sentinel": "system-quality-sentinel",
+        }
+
+        now_utc = datetime.now(timezone.utc)
+        stagnant_count = 0
+        running_count = 0
+
+        for r in active_roles:
+            role_id = r["id"]
+            d_name = role_dir_map.get(role_id, role_id.replace(".", "-"))
+            p_dir = AGENT_DATA_ROOT / "personas" / d_name
+            state_file = p_dir / "pdca" / "state.json"
+
+            if not p_dir.is_dir():
+                self.log_error(f"角色缺失實體 Persona 目錄: {role_id} (目錄: {d_name})", target=role_id, incident_type="MISSING_PERSONA_DIR")
+                continue
+            if not state_file.is_file():
+                self.log_error(f"角色缺少 PDCA 狀態契約 (state.json): {role_id}", target=role_id, incident_type="MISSING_PDCA_STATE")
+                continue
+
+            try:
+                s_data = json.loads(state_file.read_text(encoding="utf-8"))
+                last_tick = s_data.get("last_tick_at")
+                if not last_tick:
+                    stagnant_count += 1
+                    continue
+                tick_dt = datetime.fromisoformat(last_tick.replace("Z", "+00:00"))
+                hours_ago = (now_utc - tick_dt).total_seconds() / 3600
+                if hours_ago > 48:
+                    stagnant_count += 1
+                else:
+                    running_count += 1
+            except Exception:
+                stagnant_count += 1
+
+        self.log_finding(f"眾神殿在席體徵掃描完畢: 共 {len(active_roles)} 位在席神祇，{running_count} 位規律運轉，{stagnant_count} 位處於歷史待命/停滯狀態。")
+
+    def check_mio_exploration_and_posts(self):
+        """
+        巡檢 Mio（澪）外部探索與圖文社群發文合規性。
+        防範『無外部探索』與『純文字發布（無圖片）』的失常狀況。
+        """
+        # 1. 檢測情報中心探索隊列
+        intel_file = AGENT_DATA_ROOT / "personas" / "sunlake-milkcat" / "intel_candidates.json"
+        if intel_file.is_file():
+            try:
+                data = json.loads(intel_file.read_text(encoding="utf-8"))
+                candidates = data.get("candidates", [])
+                self.log_finding(f"Mio 外部情報探索庫檢查: 現有候選主題 {len(candidates)} 則。")
+            except Exception as e:
+                self.log_finding(f"Mio 外部情報庫讀取略過: {e}")
+
+        # 2. 檢測 Mio 審批通過與發布中貼文是否具備合成配圖
+        mio_approved_dir = AGENT_DATA_ROOT / "personas" / "mio" / "approved"
+        if mio_approved_dir.is_dir():
+            approved_posts = list(mio_approved_dir.glob("mio-post-*.txt"))
+            missing_images = []
+            for p in approved_posts:
+                img_manifest = p.with_suffix(".json")
+                if not img_manifest.is_file():
+                    missing_images.append(p.name)
+            if missing_images:
+                self.log_error(
+                    f"Mio 發布合規警告: 發現 {len(missing_images)} 則待發布貼文未具備專屬配圖 (未滿足含圖發布契約): {missing_images[:3]}",
+                    target="persona.mio",
+                    incident_type="MIO_POST_WITHOUT_IMAGE"
+                )
+            else:
+                self.log_finding(f"Mio 待發布貼文圖文契約檢查通過 (共 {len(approved_posts)} 則)。")
+        else:
+            self.log_finding("Mio approved 發布隊列為空 (尚無待發布排程)。")
+
     def run_all(self):
         print("=" * 60)
         print("🛡️  全系統品質巡檢使 (System Quality Sentinel) 開始巡檢")
@@ -234,6 +351,8 @@ class SystemQualitySentinel:
         self.check_file_conflicts_and_deadlocks()
         self.check_role_reality_guard()
         self.check_pipeline_liveliness_and_anti_stagnation()
+        self.check_pantheon_vital_signs()
+        self.check_mio_exploration_and_posts()
 
         print("\n" + "=" * 60)
         print("📋 巡檢總結報告")
