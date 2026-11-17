@@ -44,6 +44,35 @@ class WoWCompanionSlotTests(unittest.TestCase):
         with self.assertRaises(CompanionSlotError):
             render_companion_slot(msg, "ask-42")
 
+    def test_offline_question_to_slot_pipeline(self):
+        from scripts.wow_companion_ingress import CompanionQuestionGateway
+
+        def provider(question, request_id, key):
+            self.assertEqual(question, "Where is the mage trainer?")
+            self.assertEqual(key, "ephemeral-test-key")
+            return {
+                "schema": SCHEMA, "request_id": request_id,
+                "category": "general", "answer": "Ask a guard in town.",
+                "sources": [], "action": {"type": "ui.answer"}
+            }
+
+        gateway = CompanionQuestionGateway(
+            lambda session: session == "session1234567890",
+            lambda: "ephemeral-test-key",
+            provider=provider,
+        )
+        request = {
+            "action": "ai.ask", "session": "session1234567890",
+            "request_id": "ask-42", "question": "Where is the mage trainer?"
+        }
+        handled = gateway.handle(request)
+        self.assertEqual(handled["status"], "OK")
+        slot = render_companion_slot(handled["reply"], request["request_id"])
+        self.assertTrue(slot.isascii())
+        self.assertNotIn(b"ephemeral-test-key", slot)
+        self.assertIn(b"AgentOSWoWReplySlot", slot)
+        self.assertEqual(gateway.handle(request)["reason"], "DUPLICATE_REQUEST")
+
     def test_large_reply_fails_closed(self):
         with self.assertRaises(ValueError):
             render_companion_slot(self.make_reply("x" * 1201), "ask-42")
