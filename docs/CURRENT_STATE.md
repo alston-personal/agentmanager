@@ -861,6 +861,11 @@ Oracle installation/readiness evidence remain required. Even a matched reference
 does not establish source eligibility, image-provider acceptance, visual-review
 quality, hosting or autonomous IMAGE publication/readback.
 
+### Role task handoff bus with progress ticks, execution receipts, and declarative callbacks
+- **Declarative Handoff Callback**: `dispatch_task` supports optional `callback={"target_role": ..., "intent": ..., "context": ...}` declarations, preserving upstream session context across asynchronous boundaries.
+- **Progress Ticks & Real-time Inspection**: Runtime workers update intermediate execution status via `update_task_progress(task_id, stage, percent, message)`. Executors can inspect status at any time via `get_task_progress(task_id)`.
+- **Closed-Loop Execution Receipts**: `complete_handoff_task` attaches standard `agentos.execution-receipt/v1` and automatically dispatches a reverse callback task to the originating executor's priority inbox upon finalization. Fully covered by `tests/test_role_handoff_bus.py`.
+
 ### Mio lifestyle intelligence, authentic life micro-events and session keeper
 - **Threads authenticated session keeper**: Implemented `scripts/mio_threads_session_keeper.py` and persistent sealed vault at `agent-data/secrets/mio-threads-session/cookies.json` with automatic keep-alive and restore capabilities.
 - **Trend Digest daily intelligence restored**: Configured automated crontab schedule (08:00 and 16:00) running `trend_digest/runner.py --all` into `morning_reading.json`.
@@ -2262,7 +2267,6 @@ Existing `scripts/chronos.py` loads `schedule.yaml` once when its process begins
 Under a follow-up PR, retain the same **manual-only** Oracle Safe Transport Workflow but avoid scheduler injection entirely. It uses the already-authorized `ubuntu` SSH and exact current protected `main` SHA to extract the existing `scripts/repair_antigravity_relay_user.sh` from the Git object and execute it directly under the existing service owner. Before any mutation: confirm exact source SHA, existing rescue directory writability, exclusive `flock`, and no stale Chronos injection; fail closed if any are unknown. The existing repair script already contains its exact-source/experience predecessor/Realm isolation preflights and Action Relay install/rollback logic. Require both installer markers and a NEW live Action Relay `agentos.realm-fabric.deployment_status` receipt showing `installer_revision=realm-fabric-effective-unit-fence/v1`, without treating an installer printout as a terminal receipt.
 
 No new service, additional capability, auto Push, issue-comment trigger, sudo, or OIDC relaxation; existing safe/normal channels stay distinct. The workflow's historical name is retained to preserve navigation, but the actual operation no longer depends on Chronos polling. Merging the updated workflow does not launch rescue; a NEW `workflow_dispatch` must be independently authorized. Keep #1682 open pending the actual Relay, Realm, OIDC, Teams and Core 10/10 receipts.
-
 
 ### Oracle Approved Issue Intake — #2297 bounded readback candidate (PR #2342, 2026-11-18)
 
