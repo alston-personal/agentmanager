@@ -42,6 +42,7 @@ ACTION_DEPLOY_THREADS_GALAXY = "agentos.threads_galaxy_static.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
 ACTION_PROVISION_WOW_2297_REPOS = "agentos.repository.provision_wow_2297_repos"
+ACTION_PROVISION_WOW_2346_SUITE_REPO = "agentos.repository.provision_wow_2346_suite_repo"
 ACTION_PUBLISH_GALAXY_DAY1 = "agentos.social_threads_galaxy_day1.publish"
 ACTION_PUBLISH_MIO_DAY2 = "agentos.social_threads_mio_day2.publish"
 ACTION_PUBLISH_MIO_APPROVED = "agentos.social_threads_mio_approved.publish"
@@ -114,6 +115,7 @@ ALLOWED_ACTIONS = {
     ACTION_RECONCILE_CONTROL_INBOX,
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
     ACTION_PROVISION_WOW_2297_REPOS,
+    ACTION_PROVISION_WOW_2346_SUITE_REPO,
     ACTION_PUBLISH_GALAXY_DAY1,
     ACTION_PUBLISH_MIO_DAY2,
     ACTION_PUBLISH_MIO_APPROVED,
@@ -1274,6 +1276,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PROVISION_WOW_2297_REPOS:
         return _run_canonical_script("scripts/provision_wow_2297_repos_user.sh", timeout=150, source_commit=source_commit)
+    if action == ACTION_PROVISION_WOW_2346_SUITE_REPO:
+        return _run_canonical_script("scripts/provision_wow_2346_suite_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PUBLISH_GALAXY_DAY1:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PROBE_MIO_IMAGE_CONTAINER:
