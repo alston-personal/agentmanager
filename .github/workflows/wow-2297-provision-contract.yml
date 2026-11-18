@@ -1,0 +1,33 @@
+name: WoW 2297 Fixed Repository Provision Contract
+
+on:
+  pull_request:
+    paths:
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/provision_wow_2297_repos_user.sh'
+      - 'tests/test_wow_2297_provision_contract.py'
+      - '.github/workflows/oracle-provision-wow-2297-repos.yml'
+      - '.github/workflows/wow-2297-provision-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/provision_wow_2297_repos_user.sh'
+      - 'tests/test_wow_2297_provision_contract.py'
+      - '.github/workflows/oracle-provision-wow-2297-repos.yml'
+      - '.github/workflows/wow-2297-provision-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test fixed bootstrap action and private repository guard
+        run: python3 -m unittest -v tests.test_wow_2297_provision_contract
