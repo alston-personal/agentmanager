@@ -1351,7 +1351,8 @@ class ThemisCommandWorker(BasePDCAWorker):
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
         from scripts.themis_status_diff import run_inventory_diff
-        result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True)
+        # 系統 PDCA 背景例行巡檢：傳入 is_user_invocation=False，遵守冷卻閥與變更過濾
+        result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True, is_user_invocation=False)
         delta = result.get("delta", {})
         summary = result.get("current", {}).get("projects_summary", {})
 

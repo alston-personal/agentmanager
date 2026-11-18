@@ -1,3 +1,17 @@
+## 2026-11-18 — #2342 Themis status-diff cooldown and user invocation separation
+
+1. **Snapshot cooldown guard & noise elimination**:
+   - Refactored `scripts/themis_status_diff.py` and `agent_core/base_pdca.py` with `should_persist_snapshot` cooldown check (minimum 6-hour interval unless material changes to Git SHA, project directory, or TODO items occur).
+   - Eliminated high-frequency disk writes and snapshot fragmentation during routine 10-minute PDCA sweeps.
+2. **User interactive invocation separation**:
+   - Differentiated user interactive command invocations from background sweeps.
+   - User queries record to `user_latest.json` and default to comparing against `start-of-day` or the previous user checkpoint, preventing routine background sweeps from washing out user-visible deltas.
+   - Preserved unit test coverage in `tests/test_themis_status_diff.py`.
+3. **Historical snapshot pruning**:
+   - Safely pruned 170 redundant 10-minute snapshot files from `$AGENT_DATA_ROOT/snapshots/inventory/`, preserving key daily checkpoints.
+
+---
+
 ## 2026-11-17 — #1682 Role task handoff bus with ACK handshake, priority queues, and dynamic registry-driven PDCA
 
 1. **Role task handoff bus with bidirectional ACK protocol**:
