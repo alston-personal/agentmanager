@@ -139,3 +139,8 @@ AgentOS is an active research and engineering project. Some subsystems are produ
 ## Mio external public discovery (experimental)
 
 `#1825` introduces a standalone, no-write public candidate receipt projection (`scripts/persona_public_discovery_contract.py`). It is **not** a live Threads feed connector or external reply executor. The existing owned-post `post.read` response cannot authorize external discovery. Actual public-source adapter, Oracle receipt, independent account validation, and optional exact-parent replies remain unimplemented pending tests and governance. See `docs/mio-public-discovery-contract.md`.
+
+
+### Issue/WorkItem closure reconciliation — source candidate (2026-11-18)
+
+`scripts/issue_completion_reconciliation.py` in Draft PR #2349 is a **read-only, not yet deployed** audit utility. It takes an explicit open/closed GitHub Issue snapshot and AgentOS canonical WorkItem ledger, and reports `CLOSED_WITHOUT_VERIFIED_DONE` when an issue is closed while its WorkItem is active or has no passed verification with nonempty evidence. Missing issues in partial snapshots must never imply closure. Cancelled WorkItems are flagged for reason review, never automatically reopened. The tool makes no GitHub/ONE changes and does not grant engineering execution authority. `tests/test_issue_completion_reconciliation.py` contains offline deterministic test cases. It is not wired to the existing open-approved-only Intake workflow or Supervisor; production monitoring requires a separately reviewed complete Issue-state snapshot, audit-only integration and actual receipt. The original #2297 closing actor remains unverified.
