@@ -21,7 +21,7 @@ jobs:
             rm -- CLAUDE.md
           fi
       - name: Unit tests
-        run: python3 -m unittest discover -s tests -p 'test_branch_convergence_paths.py' -v && python3 -m unittest discover -s tests -p 'test_branch_resume_guard.py' -v && python3 -m unittest discover -s tests -p 'test_branch_sync_policy.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_branch_convergence_paths.py' -v && python3 -m unittest discover -s tests -p 'test_branch_resume_guard.py' -v && python3 -m unittest discover -s tests -p 'test_branch_sync_policy.py' -v && python3 -m unittest discover -s tests -p 'test_issue_completion_reconciliation.py' -v
       - name: Verify Executor job freshness before dispatch
         run: |
           python3 -m venv /tmp/agentos-resume-guard-venv
