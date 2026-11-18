@@ -40,6 +40,26 @@ class Wow2346SuiteRepoProvisionContract(unittest.TestCase):
         fn.assert_called_once_with("scripts/provision_wow_2346_suite_repo_user.sh",
                                    timeout=120, source_commit="a"*40)
 
+    def test_rejects_unpinned_suite_bootstrap_request(self):
+        req = {
+            "schema": bootstrap.SCHEMA,
+            "request_id": "demo",
+            "action": bootstrap.ACTION_PROVISION_WOW_2346_SUITE_REPO,
+            "params": {},
+        }
+        with self.assertRaisesRegex(ValueError, "requires exact source_commit"):
+            bootstrap._validate_request(Path("/tmp/demo.request.json"), req)
+
+    def test_rejects_arbitrary_repository_parameter(self):
+        req = {
+            "schema": bootstrap.SCHEMA,
+            "request_id": "demo",
+            "action": bootstrap.ACTION_PROVISION_WOW_2346_SUITE_REPO,
+            "params": {"source_commit": "a"*40, "repository": "evil/other"},
+        }
+        with self.assertRaisesRegex(ValueError, "unsupported bootstrap params"):
+            bootstrap._validate_request(Path("/tmp/demo.request.json"), req)
+
     def test_workflow_exact_owner_and_main_sha_guard(self):
         source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("github.actor == 'alstonhuang'", source)
