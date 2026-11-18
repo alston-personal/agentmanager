@@ -90,7 +90,7 @@ jobs:
           # Issue #2297 engineering intake readback: data-only, zero new dispatch.
           # Keep its status distinct from the legacy #2134 assignment.
           /usr/bin/python3 - "$data/governance/work-items.json" "$data/governance/issue-intake/last-sync-result.json" <<'PY'
-          import json,sys
+          import json,re,sys
           ledger=json.load(open(sys.argv[1],encoding="utf-8")).get("items",{})
           rows=json.load(open(sys.argv[2],encoding="utf-8"))
           work_id="gh-issue-2297-engineering"
@@ -108,7 +108,7 @@ jobs:
                        {"NONE","HUMAN_AUTH","RUNTIME_HEALTH","PROVIDER_CAPACITY","VERIFICATION",
                         "UNKNOWN","MARKET_DATA"},"UNKNOWN")
           owner=item.get("owner")
-          if type(owner) is not str or not owner.startswith("role://") or len(owner)>100:
+          if type(owner) is not str or re.fullmatch(r"role://[A-Za-z0-9._/-]{1,90}",owner) is None:
               owner="unassigned"
           verification=item.get("verification") or {}
           evidence=item.get("evidence") or []
