@@ -2282,6 +2282,10 @@ The first scheduled Oracle Approved Issue Intake run after PR #2342 merged, [run
 This candidate correction prints the same data using a non-issue-number key prefix `wow_repo_split_*` and correctly whitelists `accepted`, `in_progress`, `waiting_external`, `blocked`, `verifying`, `done`, and `cancelled`. It does not modify the WorkItem, authorize an engineering Executor, bypass Supervisor, provision repositories, or assert any live client delivery. The durable issue intake still requires independently governed execution, and the old #2134 output remains separate.
 
 
+### Hosted CI isolation for Oracle-only CLAUDE.md link (2026-11-18)
+
+The tracked repository-root `CLAUDE.md` is a symlink to `/home/ubuntu/agent-data/templates/CLAUDE.md`, an Oracle-only path that is unavailable to GitHub-hosted runner workspaces. In `.github/workflows/core-social-runtime-guard.yml`, pytest previously failed during the initial root directory scan, before collecting the requested social tests, with `PermissionError: CLAUDE.md`. A narrowly scoped hosted-checkout preparation step checks that the exact tracked link is dangling and then unlinks **only the GitHub runner's local symlink**; the Oracle target, repository source, social runtime implementation and test assertions are unchanged. This is not a new deployment capability and is unrelated to the WoW repo provisioning logic; the independent WoW #2297 draft PR may be considered only after governance CI passes on its rebased source.
+
 ### WoW #2297 — exact private repository provisioning candidate (2026-11-18)
 
 The approved WoW AddOn project split (#2297) is admitted to Oracle's durable engineering intake, but `gh-issue-2297-engineering` has `execution_authorized=false` by design and does **not** grant the Completion Controller or Lobster arbitrary GitHub execution. The preexisting Oracle `ubuntu` Bootstrap Control supports a fixed `ziwei-master` private repo action, while the existing Actions Workflow Dispatch and Executor Job registrations do not automatically authorize an arbitrary new repository.
