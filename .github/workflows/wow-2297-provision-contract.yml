@@ -6,7 +6,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/provision_wow_2297_repos_user.sh'
       - 'tests/test_wow_2297_provision_contract.py'
-      - '.github/workflows/oracle-provision-wow-2297-repos.yml'
+      - '.github/workflows/oracle-provision-ziwei-master-via-bootstrap.yml'
       - '.github/workflows/wow-2297-provision-contract.yml'
   push:
     branches: [main]
@@ -14,7 +14,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/provision_wow_2297_repos_user.sh'
       - 'tests/test_wow_2297_provision_contract.py'
-      - '.github/workflows/oracle-provision-wow-2297-repos.yml'
+      - '.github/workflows/oracle-provision-ziwei-master-via-bootstrap.yml'
       - '.github/workflows/wow-2297-provision-contract.yml'
 
 permissions:
