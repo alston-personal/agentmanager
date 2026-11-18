@@ -21,7 +21,7 @@ for name in wow-agentos-addon wow-nav-assist; do
   fi
 
   # Independent remote readback, never infer success from gh repo create exit 0 alone.
-  metadata="$(gh repo view "$repo" --json id,nameWithOwner,isPrivate --jq '[.id,.nameWithOwner,.isPrivate] | @tsv')"
+  metadata="$(gh api "repos/$repo" --jq '[.id,.full_name,.private] | @tsv')"
   IFS=$'\t' read -r repo_id actual_name is_private <<< "$metadata"
   test "$actual_name" = "$repo" || { echo "error=repo_identity_mismatch" >&2; exit 4; }
   test "$is_private" = "true" || { echo "error=repo_not_private" >&2; exit 4; }
