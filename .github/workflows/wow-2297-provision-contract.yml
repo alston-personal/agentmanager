@@ -6,6 +6,8 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/provision_wow_2297_repos_user.sh'
       - 'tests/test_wow_2297_provision_contract.py'
+      - 'tests/test_wow_2346_provision_contract.py'
+      - 'scripts/provision_wow_2346_suite_repo_user.sh'
       - '.github/workflows/oracle-provision-ziwei-master-via-bootstrap.yml'
       - '.github/workflows/wow-2297-provision-contract.yml'
   push:
@@ -14,6 +16,8 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/provision_wow_2297_repos_user.sh'
       - 'tests/test_wow_2297_provision_contract.py'
+      - 'tests/test_wow_2346_provision_contract.py'
+      - 'scripts/provision_wow_2346_suite_repo_user.sh'
       - '.github/workflows/oracle-provision-ziwei-master-via-bootstrap.yml'
       - '.github/workflows/wow-2297-provision-contract.yml'
 
@@ -30,4 +34,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test fixed bootstrap action and private repository guard
-        run: python3 -m unittest -v tests.test_wow_2297_provision_contract
+        run: python3 -m unittest -v tests.test_wow_2297_provision_contract tests.test_wow_2346_provision_contract
