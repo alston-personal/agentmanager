@@ -189,8 +189,3 @@ The Growth Auditor must classify conservatively:
 - G5 is longitudinal and must not be inferred from one event.
 
 See `docs/GROWTH_AUDITOR.md` for the runtime contract.
-
-
-## GitHub Issue / WorkItem closure reconciliation candidate (2026-11-18)
-
-`scripts/issue_completion_reconciliation.py` is a **read-only, not deployed** audit utility introduced in Draft PR #2349 after #2297 was found closed without completed repository-provision and ONE-registration receipts. Given an explicit state-bearing GitHub Issue snapshot (both open and closed entries) and the canonical AgentOS WorkItem ledger, it reports `CLOSED_WITHOUT_VERIFIED_DONE` when GitHub is closed but the corresponding `gh-issue-N-engineering` / readonly WorkItem is still active or lacks a passed verification with nonempty evidence. It never infers closure from an issue missing in an incomplete snapshot, mutates GitHub state, authorizes engineering execution, or advances ONE. `cancelled` requires reason review rather than automatic reopening. Unit tests: `tests/test_issue_completion_reconciliation.py`. The existing Intake workflow still filters open approved Issues; this checker is **not wired into that workflow or Supervisor**. Do not claim automated monitoring or known identity of the original #2297 closer without independent event/receipt evidence. A future, separately reviewed integration must ensure open+closed snapshot completeness and authorization-safe, audit-only outputs before any automated correction.
