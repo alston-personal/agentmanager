@@ -28,7 +28,7 @@ class WoW2297ProvisionContract(unittest.TestCase):
         self.assertNotIn("eval ", script)
 
     def test_live_workflow_bash_is_syntactically_valid_and_single_shot(self):
-        """Compile the real workflow shell, not just source tokens."""
+        """Compile the actual run body and verify one request/receipt pair."""
         workflow = WORKFLOW.read_text(encoding="utf-8")
         marker = "        run: |" + chr(10)
         self.assertEqual(workflow.count(marker), 1)
@@ -36,36 +36,11 @@ class WoW2297ProvisionContract(unittest.TestCase):
         checked = subprocess.run(["bash", "-n"], input=script, text=True,
                                  capture_output=True, check=False)
         self.assertEqual(checked.returncode, 0, checked.stderr)
-        self.assertEqual(script.count('python3 - "$REQUEST"'), 1)
-        self.assertEqual(script.count('python3 - "$RECEIPT"'), 1)
+        self.assertEqual(script.count("python3 - " + chr(34) + chr(36) + "REQUEST" + chr(34)), 1)
+        self.assertEqual(script.count("python3 - " + chr(34) + chr(36) + "RECEIPT" + chr(34)), 1)
         self.assertEqual(script.count("wow_2297_repo_provision=PASS"), 1)
-        self.assertIn("grep -Eq '^[0-9a-f]{40}
-        action = bootstrap.ACTION_PROVISION_WOW_2297_REPOS
-        self.assertIn(action, bootstrap.ALLOWED_ACTIONS)
-        with patch.object(bootstrap, "_run_canonical_script", return_value={"ok": True}) as fn:
-            self.assertEqual(bootstrap._execute(action, "a"*40), {"ok": True})
-        fn.assert_called_once_with("scripts/provision_wow_2297_repos_user.sh",
-                                   timeout=150, source_commit="a"*40)
-
-    def test_dispatch_is_manual_exact_actor_and_uses_bootstrap(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("  workflow_dispatch:", text)
-        self.assertNotIn("  push:", text)
-        self.assertNotIn("  schedule:", text)
-        self.assertIn("github.actor == 'alstonhuang'", text)
-        self.assertIn("test \"$GITHUB_SHA\" = \"$SOURCE_COMMIT\"", text)
-        self.assertIn("agentos.repository.provision_wow_2297_repos", text)
-        self.assertIn("agentos.bootstrap-request/v1", text)
-        self.assertIn("agentos.bootstrap-receipt/v1", text)
-        self.assertIn("assert r.get('ok') is True", text)
-        self.assertIn("wow_2297_repo_provision=PASS", text)
-
-
-if __name__ == "__main__":
-    unittest.main()
-", script)
-        self.assertLess(script.index('test "$GITHUB_SHA" = "$SOURCE_COMMIT"'),
-                        script.index('python3 - "$REQUEST"'))
+        self.assertIn("grep -Eq", script)
+        self.assertLess(script.index("stale_main_source"), script.index("bootstrap-request/v1"))
 
     def test_bootstrap_existing_fixed_action_selected(self):
         action = bootstrap.ACTION_PROVISION_WOW_2297_REPOS
