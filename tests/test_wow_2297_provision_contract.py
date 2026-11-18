@@ -10,7 +10,7 @@ from agentos_node import bootstrap_control as bootstrap
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/provision_wow_2297_repos_user.sh"
-WORKFLOW = ROOT / ".github/workflows/oracle-provision-wow-2297-repos.yml"
+WORKFLOW = ROOT / ".github/workflows/oracle-provision-ziwei-master-via-bootstrap.yml"
 
 
 class WoW2297ProvisionContract(unittest.TestCase):
@@ -44,8 +44,8 @@ class WoW2297ProvisionContract(unittest.TestCase):
         self.assertIn("agentos.repository.provision_wow_2297_repos", text)
         self.assertIn("agentos.bootstrap-request/v1", text)
         self.assertIn("agentos.bootstrap-receipt/v1", text)
-        self.assertIn('receipt.get("ok") is True', text)
-        self.assertIn("wow_2297_repo_provision_receipt=PASS", text)
+        self.assertIn("assert r.get('ok') is True", text)
+        self.assertIn("wow_2297_repo_provision=PASS", text)
 
 
 if __name__ == "__main__":
