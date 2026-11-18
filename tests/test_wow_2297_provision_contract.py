@@ -28,9 +28,9 @@ class WoW2297ProvisionContract(unittest.TestCase):
         self.assertNotIn("eval ", script)
 
     def test_live_workflow_bash_is_syntactically_valid_and_single_shot(self):
-        """Compile the REAL workflow run payload; token-matching alone missed a broken quote."""
+        """Compile the real workflow shell, not just source tokens."""
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        marker = "        run: |\\n"
+        marker = "        run: |" + chr(10)
         self.assertEqual(workflow.count(marker), 1)
         script = textwrap.dedent(workflow.split(marker, 1)[1])
         checked = subprocess.run(["bash", "-n"], input=script, text=True,
