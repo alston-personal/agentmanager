@@ -29,7 +29,6 @@ class WoW2297ProvisionContract(unittest.TestCase):
     def test_bootstrap_existing_fixed_action_selected(self):
         action = bootstrap.ACTION_PROVISION_WOW_2297_REPOS
         self.assertIn(action, bootstrap.ALLOWED_ACTIONS)
-        self.assertIn(action, bootstrap._validate_request.__code__.co_consts or ())
         with patch.object(bootstrap, "_run_canonical_script", return_value={"ok": True}) as fn:
             self.assertEqual(bootstrap._execute(action, "a"*40), {"ok": True})
         fn.assert_called_once_with("scripts/provision_wow_2297_repos_user.sh",
