@@ -861,6 +861,11 @@ Oracle installation/readiness evidence remain required. Even a matched reference
 does not establish source eligibility, image-provider acceptance, visual-review
 quality, hosting or autonomous IMAGE publication/readback.
 
+### Role task handoff bus with progress ticks, execution receipts, and declarative callbacks
+- **Declarative Handoff Callback**: `dispatch_task` supports optional `callback={"target_role": ..., "intent": ..., "context": ...}` declarations, preserving upstream session context across asynchronous boundaries.
+- **Progress Ticks & Real-time Inspection**: Runtime workers update intermediate execution status via `update_task_progress(task_id, stage, percent, message)`. Executors can inspect status at any time via `get_task_progress(task_id)`.
+- **Closed-Loop Execution Receipts**: `complete_handoff_task` attaches standard `agentos.execution-receipt/v1` and automatically dispatches a reverse callback task to the originating executor's priority inbox upon finalization. Fully covered by `tests/test_role_handoff_bus.py`.
+
 ### Mio lifestyle intelligence, authentic life micro-events and session keeper
 - **Threads authenticated session keeper**: Implemented `scripts/mio_threads_session_keeper.py` and persistent sealed vault at `agent-data/secrets/mio-threads-session/cookies.json` with automatic keep-alive and restore capabilities.
 - **Trend Digest daily intelligence restored**: Configured automated crontab schedule (08:00 and 16:00) running `trend_digest/runner.py --all` into `morning_reading.json`.
