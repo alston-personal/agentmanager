@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,21 @@ class WoW2297ProvisionContract(unittest.TestCase):
         self.assertIn('test "$is_private" = "true"', script)
         self.assertNotIn("$1", script)
         self.assertNotIn("eval ", script)
+
+    def test_live_workflow_bash_is_syntactically_valid_and_single_shot(self):
+        """Compile the actual run body and verify one request/receipt pair."""
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        marker = "        run: |" + chr(10)
+        self.assertEqual(workflow.count(marker), 1)
+        script = textwrap.dedent(workflow.split(marker, 1)[1])
+        checked = subprocess.run(["bash", "-n"], input=script, text=True,
+                                 capture_output=True, check=False)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertEqual(script.count("python3 - " + chr(34) + chr(36) + "REQUEST" + chr(34)), 1)
+        self.assertEqual(script.count("python3 - " + chr(34) + chr(36) + "RECEIPT" + chr(34)), 1)
+        self.assertEqual(script.count("wow_2297_repo_provision=PASS"), 1)
+        self.assertIn("grep -Eq", script)
+        self.assertLess(script.index("stale_main_source"), script.index("bootstrap-request/v1"))
 
     def test_bootstrap_existing_fixed_action_selected(self):
         action = bootstrap.ACTION_PROVISION_WOW_2297_REPOS
