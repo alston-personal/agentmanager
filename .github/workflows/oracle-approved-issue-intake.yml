@@ -97,13 +97,13 @@ jobs:
           item=ledger.get(work_id) or {}
           selected=[row for row in rows if isinstance(row,dict)
                     and (row.get("work_id")==work_id or row.get("number")==2297)]
-          statuses={"accepted","already_terminal","skipped"}
+          statuses={"accepted","in_progress","waiting_external","blocked","verifying","done","cancelled","failed","already_terminal","skipped"}
           intake_status=next((row.get("status") for row in selected
                               if row.get("status") in statuses),"not_reported")
           def safe(value, allowed, default):
               return value if type(value) is str and value in allowed else default
           status=safe(item.get("status"),
-                      {"pending","ready","active","blocked","done","failed","cancelled","waiting"},"unknown")
+                      {"accepted","in_progress","waiting_external","blocked","verifying","done","cancelled"},"unknown")
           blocker=safe(item.get("last_blocker_kind"),
                        {"NONE","HUMAN_AUTH","RUNTIME_HEALTH","PROVIDER_CAPACITY","VERIFICATION",
                         "UNKNOWN","MARKET_DATA"},"UNKNOWN")
@@ -114,13 +114,13 @@ jobs:
           evidence=item.get("evidence") or []
           verified=(status=="done" and verification.get("status")=="passed"
                     and isinstance(evidence,list) and len(evidence)>0)
-          print("wow_2297_intake_status="+intake_status)
-          print("wow_2297_work_item_present="+str(bool(item)).lower())
-          print("wow_2297_work_item_status="+status)
-          print("wow_2297_work_item_owner="+owner)
-          print("wow_2297_execution_authorized="+str(item.get("execution_authorized") is True).lower())
-          print("wow_2297_blocker_kind="+blocker)
-          print("wow_2297_verified_done="+str(verified).lower())
+          print("wow_repo_split_intake_status="+intake_status)
+          print("wow_repo_split_work_item_present="+str(bool(item)).lower())
+          print("wow_repo_split_work_item_status="+status)
+          print("wow_repo_split_work_item_owner="+owner)
+          print("wow_repo_split_execution_authorized="+str(item.get("execution_authorized") is True).lower())
+          print("wow_repo_split_blocker_kind="+blocker)
+          print("wow_repo_split_verified_done="+str(verified).lower())
           PY
           # Read-only ledger summary: do not mistake admission for verified execution.
           /usr/bin/python3 - "$data/governance/work-items.json" <<'PY'
