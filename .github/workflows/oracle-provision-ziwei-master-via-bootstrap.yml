@@ -11,6 +11,7 @@ on:
         options:
           - ziwei-master
           - wow-2297
+          - wow-2346
 permissions:
   contents: read
 
@@ -40,6 +41,10 @@ jobs:
               ACTION=agentos.repository.provision_wow_2297_repos
               SOURCE_REF=main
               ;;
+            wow-2346)
+              ACTION=agentos.repository.provision_wow_2346_suite_repo
+              SOURCE_REF=main
+              ;;
             *) echo 'error=unsupported_repository_group' >&2; exit 2 ;;
           esac
           REQUEST_ID="fixed-repo-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -47,7 +52,7 @@ jobs:
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
           SOURCE_COMMIT=$(git ls-remote origin "refs/heads/$SOURCE_REF" | awk '{print $1}')
           printf '%s\n' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
-          if [ "$REPOSITORY_GROUP" = wow-2297 ]; then
+          if [ "$REPOSITORY_GROUP" = wow-2297 ] || [ "$REPOSITORY_GROUP" = wow-2346 ]; then
             test "$GITHUB_REF_NAME" = main || { echo 'error=main_ref_required' >&2; exit 2; }
             test "$GITHUB_SHA" = "$SOURCE_COMMIT" || { echo 'error=stale_main_source' >&2; exit 2; }
           fi
@@ -99,6 +104,15 @@ jobs:
               assert lines.count('private=true')==2
               print('wow_2297_repo_provision=PASS')
               print('repo_ids='+','.join(ids))
+          elif action=='agentos.repository.provision_wow_2346_suite_repo':
+              assert 'wow_2346_repository_provision=PASS' in lines
+              assert 'repo=alston-personal/wow-companion-suite' in lines
+              ids=[x.split('=',1)[1] for x in lines if x.startswith('repository_id=')]
+              assert len(ids)==1 and ids[0].isdecimal()
+              assert lines.count('private=true')==1
+              assert 'default_branch=main' in lines
+              print('wow_2346_repo_provision=PASS')
+              print('repo_id='+ids[0])
           else:
               raise AssertionError('unknown_bootstrap_action')
           print('source_commit='+expected)
