@@ -87,6 +87,41 @@ jobs:
           print("issue_intake_rejected="+str(sum(x.get("status")=="skipped" for x in data)))
           print("issue_intake_already_terminal="+str(sum(x.get("status")=="already_terminal" for x in data)))
           PY
+          # Issue #2297 engineering intake readback: data-only, zero new dispatch.
+          # Keep its status distinct from the legacy #2134 assignment.
+          /usr/bin/python3 - "$data/governance/work-items.json" "$data/governance/issue-intake/last-sync-result.json" <<'PY'
+          import json,sys
+          ledger=json.load(open(sys.argv[1],encoding="utf-8")).get("items",{})
+          rows=json.load(open(sys.argv[2],encoding="utf-8"))
+          work_id="gh-issue-2297-engineering"
+          item=ledger.get(work_id) or {}
+          selected=[row for row in rows if isinstance(row,dict)
+                    and (row.get("work_id")==work_id or row.get("number")==2297)]
+          statuses={"accepted","already_terminal","skipped"}
+          intake_status=next((row.get("status") for row in selected
+                              if row.get("status") in statuses),"not_reported")
+          def safe(value, allowed, default):
+              return value if type(value) is str and value in allowed else default
+          status=safe(item.get("status"),
+                      {"pending","ready","active","blocked","done","failed","cancelled","waiting"},"unknown")
+          blocker=safe(item.get("last_blocker_kind"),
+                       {"NONE","HUMAN_AUTH","RUNTIME_HEALTH","PROVIDER_CAPACITY","VERIFICATION",
+                        "UNKNOWN","MARKET_DATA"},"UNKNOWN")
+          owner=item.get("owner")
+          if type(owner) is not str or not owner.startswith("role://") or len(owner)>100:
+              owner="unassigned"
+          verification=item.get("verification") or {}
+          evidence=item.get("evidence") or []
+          verified=(status=="done" and verification.get("status")=="passed"
+                    and isinstance(evidence,list) and len(evidence)>0)
+          print("wow_2297_intake_status="+intake_status)
+          print("wow_2297_work_item_present="+str(bool(item)).lower())
+          print("wow_2297_work_item_status="+status)
+          print("wow_2297_work_item_owner="+owner)
+          print("wow_2297_execution_authorized="+str(item.get("execution_authorized") is True).lower())
+          print("wow_2297_blocker_kind="+blocker)
+          print("wow_2297_verified_done="+str(verified).lower())
+          PY
           # Read-only ledger summary: do not mistake admission for verified execution.
           /usr/bin/python3 - "$data/governance/work-items.json" <<'PY'
           import json,sys
