@@ -50,6 +50,12 @@ def show_audit(limit: int = 10, role_filter: str | None = None):
 
 
 if __name__ == "__main__":
-    limit = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 10
-    role = sys.argv[2] if len(sys.argv) > 2 else None
-    show_audit(limit, role)
+    import argparse
+    parser = argparse.ArgumentParser(description="View LLM Reasoning Audit Trail")
+    parser.add_argument("--limit", type=int, default=10, help="Number of recent entries to show")
+    parser.add_argument("--role", type=str, default=None, help="Filter by role ID")
+    parser.add_argument("pos_limit", nargs="?", type=int, default=None, help="Positional limit")
+    args = parser.parse_args()
+
+    limit_val = args.pos_limit if args.pos_limit is not None else args.limit
+    show_audit(limit=limit_val, role_filter=args.role)

@@ -400,10 +400,58 @@ class BasePDCAWorker:
         p_data = self.plan(cycle)
         print(f"[{self.role_slug.upper()}] [Plan] Task: {p_data.get('task')}")
 
-        d_data = self.do(p_data, work_id)
-        print(f"[{self.role_slug.upper()}] [Do] Action executed: {d_data.get('action')}")
+        # 嘗試從 Plan 萃取關聯專案 ID (供 Project IR 雙重注水思考使用)
+        import re
+        target_project_id = p_data.get("project_id")
+        if not target_project_id and p_data.get("task"):
+            m = re.findall(r"\[([a-zA-Z0-9_\-]+)\]", str(p_data["task"]))
+            if m:
+                target_project_id = m[0]
 
-        c_data = self.check(p_data, d_data)
+        # 2. DO PHASE (包含異常防護與自主 LLM 思考修復)
+        d_data = {}
+        try:
+            d_data = self.do(p_data, work_id)
+            print(f"[{self.role_slug.upper()}] [Do] Action executed: {d_data.get('action')}")
+        except Exception as exc:
+            print(f"⚠️ [{self.role_slug.upper()}] [Do] Exception encountered: {exc}. 觸發 Base Role 自主 LLM 決策...")
+            reasoning_res = self.reason_with_llm(
+                prompt=f"執行階段發生未捕捉例外，請以角色身分分析根本原因並提供修復對策：{exc}",
+                project_id=target_project_id,
+                context={"stage": "do", "exception": str(exc), "plan": p_data},
+            )
+            d_data = {
+                "action": "exception_handled",
+                "status": "error_mitigated",
+                "exception": str(exc),
+                "remediation": reasoning_res.get("reasoning"),
+                "llm_provider": reasoning_res.get("provider"),
+            }
+
+        # 3. CHECK PHASE (若驗證失敗，觸發 Base Role LLM 自省)
+        c_data = {}
+        try:
+            c_data = self.check(p_data, d_data)
+        except Exception as exc:
+            c_data = {
+                "verifier_role": "core.root.inspector",
+                "verdict": "FAIL",
+                "findings": [f"❌ Check phase exception: {exc}"],
+            }
+
+        # 若 Check 裁定失敗或存在異常，所有角色一律於 Base Role 層級呼叫 LLM 進行處方開立
+        if c_data.get("verdict") == "FAIL":
+            print(f"🔍 [{self.role_slug.upper()}] [Check] FAIL observed. 啟動 Base Role LLM 自省與處方開立...")
+            reasoning_res = self.reason_with_llm(
+                prompt=f"檢查階段裁定未通過 (FAIL)。Findings: {c_data.get('findings')}\n請給出根本原因診斷與具體處方。",
+                project_id=target_project_id,
+                context={"stage": "check", "check_data": c_data, "do_data": d_data},
+            )
+            c_data.setdefault("findings", []).append(
+                f"🧠 [LLM Prescription]: {reasoning_res.get('reasoning')[:120]}..."
+            )
+            c_data["llm_remediation"] = reasoning_res.get("reasoning")
+
         print(f"[{self.role_slug.upper()}] [Check] Verdict: {c_data.get('verdict')} ({'; '.join(c_data.get('findings', []))})")
 
         res = self.act(cycle, work_id, p_data, d_data, c_data)

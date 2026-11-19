@@ -48,6 +48,21 @@
 
 ---
 
+## 2026-11-19 — #2354 Base Role universal LLM reasoning fallback & audit trail
+
+1. **Universal LLM reasoning integration in `BasePDCAWorker`**:
+   - Refactored `agent_core/base_pdca.py` so that all 22+ active roles inheriting from `BasePDCAWorker` automatically trigger bounded LLM decision-making (`reason_with_llm()`) during execution exceptions or validation failures (`FAIL`).
+   - Dual-hydrates Character Cognitive IR (`load_cognitive_ir`) and Target Project IR (`load_project_ir`) before reasoning to preserve role identity and project context.
+   - Enforces a bounded 5s execution timeout with non-blocking fallback to `fallback_rule_engine (DEFERRED)` to prevent crontab PDCA lockup.
+2. **Persistent reasoning audit trail & monitoring**:
+   - Added persistent logging to `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+   - Created CLI monitor `scripts/reasoning_monitor.py` for reviewing real-time model invocations, decision previews, and role remediations.
+3. **Spec refinement queue integration for blocked tasks**:
+   - In `scripts/aggregate_tasks.py`, legacy `[!]` blocked tasks are routed as `BLOCKED_INCIDENT` into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+   - `SpecStewardWorker` audits and claims blocked items for spec reconstruction instead of leaving them in dead-end queues.
+
+---
+
 ## 2026-11-18 — #2342 Themis status-diff cooldown and user invocation separation
 
 1. **Snapshot cooldown guard & noise elimination**:
