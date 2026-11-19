@@ -59,6 +59,7 @@
    - Created CLI monitor `scripts/reasoning_monitor.py` for reviewing real-time model invocations, decision previews, and role remediations.
 3. **Spec refinement queue integration for blocked tasks**:
    - In `scripts/aggregate_tasks.py`, legacy `[!]` blocked tasks are routed as `BLOCKED_INCIDENT` into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+   - Hardened `is_task_qualified()` regex to require explicit shell execution patterns with word boundaries, preventing freeform text with embedded tool names (e.g. `wow-nav-assist`) from falsely leaking into execution queues.
    - `SpecStewardWorker` audits and claims blocked items for spec reconstruction instead of leaving them in dead-end queues.
 
 ---

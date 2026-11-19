@@ -39,11 +39,11 @@ def parse_metadata(content):
     return meta
 
 def is_task_qualified(content: str) -> bool:
-    """Check if task conforms to TASK_SPECIFICATION_STANDARD.md (has verification command)."""
-    if "驗收:" in content or "verify:" in content:
+    """Check if task conforms to TASK_SPECIFICATION_STANDARD.md (must have an executable verification command in backticks)."""
+    # 必須包含驗收/verify關鍵字後接反引號可執行指令，或在行內直接指定明確 shell 可執行指令
+    if re.search(r"(?:驗收|verify):\s*`\s*(?:pytest|python3|npm|test|curl|node|ss|chmod|git|bash)\b[^`]*`", content):
         return True
-    # Match backticked executable shell commands
-    if re.search(r"`[^`]*(?:pytest|python3|npm|test|curl|node|ss|chmod|git|bash)[^`]*`", content):
+    if re.search(r"`\s*(?:pytest|python3|npm|test -|curl|node|ss -|chmod|git|bash)\b[^`]*`", content):
         return True
     return False
 
