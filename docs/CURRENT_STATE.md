@@ -1,3 +1,11 @@
+## 2026-11-19 — #2198 AgentOS welcome navigation: source fix awaiting Oracle/browser verification
+
+- **Confirmed cause:** the `/welcome` primary `我的 AgentOS` link and shared account header both pointed back to `/welcome`, making an authenticated platform admin's click appear inert. This is a UI routing defect, not evidence of a failed OAuth login or deployed-version regression.
+- **Implemented in PR #2356 (source candidate):** `agent_core/companion_web.py` renders the welcome primary navigation as a current-page indicator; after authenticated Session, its account header links to `/platform` for platform admins, and to `/my-one` only after the user's own Realm onboarding status reports `realm_initialized`. Before authorization, it offers no misleading workspace link. Backend `/platform` and `/my-one` remain independently role/membership gated.
+- **Verified:** source path and regression tests added. **Not yet verified:** accepted Oracle deployment SHA; actual signed-in `register@milkcat.org` click-through; Realm Owner visit; cross-tenant denial; user Windows Node enrollment and WoW Bridge. This change must not be reported as a production fix or Suite completion until those receipts exist.
+
+---
+
 ## 2026-11-17 — #1682 Role task handoff bus with ACK handshake, priority queues, and dynamic registry-driven PDCA
 
 1. **Role task handoff bus with bidirectional ACK protocol**:
