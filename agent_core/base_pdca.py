@@ -198,7 +198,7 @@ class BasePDCAWorker:
             + "請以繁體中文 (zh-TW) 回應，直接給出明確的診斷、下一步具體行動或修改後的具體代碼/規範。"
         )
 
-        # 嘗試優先調用 Claude CLI，備援 Gemini CLI
+        # 嘗試優先調用 Claude CLI，備援 Gemini CLI (非同步快速模式，設定 5 秒上限，避免阻塞 PDCA 常態心跳)
         claude_paths = [
             Path("/home/ubuntu/.local/bin/claude"),
             Path("/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-linux-arm64/resources/native-binary/claude"),
@@ -209,15 +209,18 @@ class BasePDCAWorker:
         status = "DEFERRED"
         reasoning_text = "本機 LLM CLI 暫時無法直接調用，已保留原始 Context 交付治理鏈。"
 
+        # 限制底層 CLI 超時，防止互動式等待卡死
+        safe_timeout = min(timeout, 5)
+
         if claude_bin:
             try:
                 res = subprocess.run(
-                    [str(claude_bin), full_prompt],
+                    [str(claude_bin), "-p", full_prompt],
                     cwd=str(self.project_root),
                     stdin=subprocess.DEVNULL,
                     text=True,
                     capture_output=True,
-                    timeout=timeout,
+                    timeout=safe_timeout,
                 )
                 if res.returncode == 0 and res.stdout.strip():
                     provider_used = "claude"
@@ -231,12 +234,12 @@ class BasePDCAWorker:
             if gemini_bin.is_file():
                 try:
                     res = subprocess.run(
-                        [str(gemini_bin), "-p", full_prompt, "--approval-mode", "plan", "--skip-trust"],
+                        [str(gemini_bin), "-p", full_prompt, "--skip-trust", "--output-format", "json"],
                         cwd=str(self.project_root),
                         stdin=subprocess.DEVNULL,
                         text=True,
                         capture_output=True,
-                        timeout=timeout,
+                        timeout=safe_timeout,
                     )
                     if res.returncode == 0 and res.stdout.strip():
                         provider_used = "gemini"

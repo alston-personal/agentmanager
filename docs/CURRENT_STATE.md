@@ -1,3 +1,15 @@
+## 2026-11-19 — #2346 The Paw Auto-Remediation and Bounded LLM Escalation Circuit
+
+1. **Paw self-healing and missing module construction**:
+   - Upgraded `scripts/role_pdca_runner.py` Do phase: When an acceptance command fails due to missing modules or syntax errors, Paw automatically triggers `reason_with_llm` and detects missing targets (e.g. `Cannot find module`, `No such file`).
+   - Automatically constructs target test scaffolds (`.js`, `.ts`, `.py`) and performs an immediate in-cycle retry before conceding failure.
+   - Successfully verified on `[wde-p1-04]` constructing `web-duel-extension/tests/relay.test.js`.
+2. **Bounded CLI timeout guard in `BasePDCAWorker`**:
+   - Implemented a 5-second defensive timeout ceiling in `agent_core/base_pdca.py` when invoking local LLM CLIs during headless PDCA heartbeats, preventing unattended interactive prompt freezes.
+   - Captured audit traces in `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+
+---
+
 ## 2026-11-19 — #2345 LLM Reasoning Audit Trail and Reasoning Monitor Viewer
 
 1. **LLM reasoning persistent audit ledger (`reasoning_audit_ledger.jsonl`)**:
