@@ -128,6 +128,128 @@ class BasePDCAWorker:
                 pass
         return {}
 
+    def load_cognitive_ir(self) -> dict[str, Any]:
+        """載入角色的認知 IR (Cognitive IR) 意識錨點。"""
+        ir_file = self.persona_dir / "ir" / "current.json"
+        if ir_file.exists():
+            try:
+                return json.loads(ir_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def load_project_ir(self, project_id: str) -> dict[str, Any]:
+        """雙重水合：動態載入目標專案的專案 IR (Project IR)，掌握專案本質與演進脈絡。"""
+        if not project_id:
+            return {}
+        project_ir_file = self.data_root / "projects" / project_id / "ir" / "current.json"
+        if project_ir_file.exists():
+            try:
+                return json.loads(project_ir_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def reason_with_llm(
+        self,
+        prompt: str,
+        project_id: str | None = None,
+        context: dict[str, Any] | None = None,
+        timeout: int = 45,
+    ) -> dict[str, Any]:
+        """在需要決策、遇例外 (Exception) 或需改寫抽象任務時，帶入角色的 Character IR + Project IR 呼叫 LLM 進行思考與裁決。"""
+        char_core = self.load_core()
+        cog_ir = self.load_cognitive_ir()
+        proj_ir = self.load_project_ir(project_id) if project_id else {}
+
+        identity_anchor = cog_ir.get("cognitive_state", {}).get("identity_anchor", self.role_slug)
+        primary_directive = cog_ir.get("cognitive_state", {}).get("primary_directive", char_core.get("mission", "執行專業任務"))
+        values = char_core.get("immutable_traits", {}).get("values", [])
+        forbidden = char_core.get("immutable_traits", {}).get("forbidden", [])
+
+        # 裝配 System Context
+        sys_context_parts = [
+            f"【角色身分 (Identity)】: {identity_anchor} (Role ID: {self.role_slug})",
+            f"【核心天條 (Directive)】: {primary_directive}",
+        ]
+        if values:
+            sys_context_parts.append(f"【價值準則】: {', '.join(values)}")
+        if forbidden:
+            sys_context_parts.append(f"【嚴禁事項】: {', '.join(forbidden)}")
+
+        if proj_ir:
+            sys_context_parts.append(f"【所屬專案】: {proj_ir.get('name', project_id)}")
+            essence = proj_ir.get("essence", {})
+            if essence.get("one_sentence_pitch"):
+                sys_context_parts.append(f"【專案定位】: {essence.get('one_sentence_pitch')}")
+            if essence.get("why_it_exists"):
+                sys_context_parts.append(f"【專案由來與存在目的】: {essence.get('why_it_exists')}")
+            guardrails = proj_ir.get("guardrails", {}).get("anti_patterns", [])
+            if guardrails:
+                sys_context_parts.append(f"【專案防範反模式】: {', '.join(guardrails)}")
+
+        if context:
+            sys_context_parts.append(f"【當前現場 Context】: {json.dumps(context, ensure_ascii=False)}")
+
+        full_prompt = (
+            "你是 AgentOS 生態中的自主神祇與工程角色，請嚴格基於你的身分與專案背景進行思考決策。\n"
+            + "\n".join(sys_context_parts)
+            + f"\n\n【待決策／例外處理任務】:\n{prompt}\n\n"
+            + "請以繁體中文 (zh-TW) 回應，直接給出明確的診斷、下一步具體行動或修改後的具體代碼/規範。"
+        )
+
+        # 嘗試優先調用 Claude CLI，備援 Gemini CLI
+        claude_paths = [
+            Path("/home/ubuntu/.local/bin/claude"),
+            Path("/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-linux-arm64/resources/native-binary/claude"),
+        ]
+        claude_bin = next((p for p in claude_paths if p.is_file()), None)
+
+        if claude_bin:
+            try:
+                res = subprocess.run(
+                    [str(claude_bin), full_prompt],
+                    cwd=str(self.project_root),
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    return {
+                        "provider": "claude",
+                        "status": "PASS",
+                        "reasoning": res.stdout.strip(),
+                    }
+            except Exception as e:
+                pass
+
+        gemini_bin = Path("/home/ubuntu/.local/bin/gemini")
+        if gemini_bin.is_file():
+            try:
+                res = subprocess.run(
+                    [str(gemini_bin), "-p", full_prompt, "--approval-mode", "plan", "--skip-trust"],
+                    cwd=str(self.project_root),
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    return {
+                        "provider": "gemini",
+                        "status": "PASS",
+                        "reasoning": res.stdout.strip(),
+                    }
+            except Exception as e:
+                pass
+
+        return {
+            "provider": "fallback_rule_engine",
+            "status": "DEFERRED",
+            "reasoning": "本機 LLM CLI 暫時無法直接調用，已保留原始 Context 交付治理鏈。",
+        }
+
     # --- Phase Overridables ---
 
     def plan(self, cycle: int) -> dict[str, Any]:

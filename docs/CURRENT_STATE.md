@@ -1,3 +1,17 @@
+## 2026-11-19 — #2344 BasePDCAWorker Dual-Hydration and Comprehensive Blocked Handoff
+
+1. **BasePDCAWorker Dual-Hydration & Exception LLM Escalation (`reason_with_llm`)**:
+   - Upgraded `agent_core/base_pdca.py` with `load_cognitive_ir()` (Character IR anchor) and `load_project_ir(project_id)` (Project IR dynamic hydration).
+   - Implemented `reason_with_llm()` on BasePDCAWorker: Automatically injects character identity, directive, values, and project essence into Claude/Gemini CLI when encountering exceptions or ambiguous tasks, replacing hardcoded failure drops.
+2. **Comprehensive blocked task handoff (`aggregate_tasks.py`)**:
+   - Extended `scripts/aggregate_tasks.py` to capture legacy `[!]` blocked tasks across all projects, preventing historical verification failures from decaying as silent ghosts.
+   - Automatically enqueues both unqualified draft tasks (`AWAITING_REFINEMENT`) and blocked incidents (`BLOCKED_INCIDENT`) into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+3. **Security-audit port verification & project IR foundation**:
+   - Re-verified host port bindings with `ss -tulpn`, confirmed internal loopback isolation (ports 8090, 8085, 8765-8776), and marked 20 blocked port inspection items as closed with verification commands.
+   - Authored authoritative `agentos.project-ir/v1` specifications for `antigravity-duel-plugin` and `web-duel-extension`.
+
+---
+
 ## 2026-11-19 — #2343 Task Specification Handoff Queue and Duel Tasks Concrete Breakdown
 
 1. **Unqualified task refinement handoff queue (資料流轉閉環)**:
