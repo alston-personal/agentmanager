@@ -490,6 +490,7 @@ def run_inventory_diff(
     is_user_invocation: bool = False,
     cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
 ) -> Tuple[Dict[str, Any], str]:
+    """執行全流程盤點、比對與快照儲存。"""
     """執行全流程盤點、比對與快照儲存。
 
     支援：
@@ -507,6 +508,7 @@ def run_inventory_diff(
 
     if base_target:
         if base_target in ("start-of-day", "today"):
+            # 尋找今日最早的快照
             today_str = datetime.datetime.now(
                 datetime.timezone(datetime.timedelta(hours=8))
             ).strftime("%Y%m%d")
@@ -526,6 +528,7 @@ def run_inventory_diff(
                 except Exception:
                     baseline = None
     elif previous_n is not None and previous_n > 0:
+        # 指定比對倒數第 N 個歷史快照
         if len(all_snapshots) >= previous_n:
             target_snap = all_snapshots[-previous_n]
             try:
@@ -569,11 +572,16 @@ def run_inventory_diff(
     # 4. 生成報告
     report_md = format_markdown_report(current, delta)
 
+    # 5. 存檔（若 save=True）
     # 5. 存檔與冷卻判定
     saved = False
     save_reason = "SAVE_DISABLED"
 
     if save:
+        timestamp_str = datetime.datetime.now(
+            datetime.timezone(datetime.timedelta(hours=8))
+        ).strftime("%Y%m%d_%H%M%S")
+        history_file = snapshot_dir / f"snapshot-{timestamp_str}.json"
         if is_user_invocation:
             # 使用者查詢記錄存至 user_latest.json，不污染系統 baseline
             user_latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -589,6 +597,10 @@ def run_inventory_diff(
                 ).strftime("%Y%m%d_%H%M%S")
                 history_file = snapshot_dir / f"snapshot-{timestamp_str}.json"
 
+        # 寫入歷史存檔
+        history_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        # 更新 latest.json
+        latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 history_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 saved = True

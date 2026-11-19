@@ -145,6 +145,32 @@ def aggregate_tasks():
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         f.write(new_content)
 
+    # 4. 資料流轉正義 (Data Handoff Lifecycle):
+    # 不合格任務嚴禁就地拋棄或死鎖！自動分流至規格改寫隊列 (spec_refinement_queue.json) 交付下一手 (Spec Steward / Architect)
+    refinement_queue_path = os.path.join(DATA_ROOT, "runtime", "spec_refinement_queue.json")
+    os.makedirs(os.path.dirname(refinement_queue_path), exist_ok=True)
+    refinement_payload = {
+        "schema": "agentos.spec-refinement-queue/v1",
+        "steward": "governance.spec_steward",
+        "updated_at": os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip(),
+        "total_unqualified": len(unqualified_pending),
+        "queue": [
+            {
+                "task": t["content"],
+                "project": t["project"],
+                "priority": t["priority"],
+                "category": t["category"],
+                "status": "AWAITING_REFINEMENT",
+                "reason": "MISSING_VERIFICATION_COMMAND_OR_SCOPE",
+            }
+            for t in unqualified_pending
+        ]
+    }
+    import json
+    with open(refinement_queue_path, "w", encoding="utf-8") as rf:
+        rf.write(json.dumps(refinement_payload, indent=2, ensure_ascii=False) + "\n")
+    print(f"📋 成功將 {len(unqualified_pending)} 項不合格任務排入規格改寫隊列: {refinement_queue_path}")
+
 if __name__ == "__main__":
     aggregate_tasks()
     print(f"Successfully aggregated ranked tasks to {OUTPUT_FILE}")

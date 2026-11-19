@@ -1,3 +1,15 @@
+## 2026-11-19 — #2343 Task Specification Handoff Queue and Duel Tasks Concrete Breakdown
+
+1. **Unqualified task refinement handoff queue (資料流轉閉環)**:
+   - Upgraded `scripts/aggregate_tasks.py`: Unqualified tasks lacking verification commands are no longer simply abandoned in a dead-end blocked section. They are automatically routed into a structured handoff queue (`$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`) under the stewardship of `governance.spec_steward`.
+   - Enhanced `SpecStewardWorker` in `agent_core/base_pdca.py` to audit and consume the refinement queue during its governance PDCA cycles, upholding the constitutional invariant that data must either be fully processed or handed off to the next owner.
+2. **Antigravity Duel Plugin and Web Duel Extension task operationalization**:
+   - Resolved the long-standing blockage on multi-agent debate and duel projects (`antigravity-duel-plugin` and `web-duel-extension`).
+   - Aligned implemented test contracts with `STATUS.md` and decomposed remaining milestone goals into concrete executable verification micro-tasks (`test -f`, `npm test`, `node test`).
+   - Unlocked Priority 9 and Priority 7 pipelines for autonomous execution by The Paw.
+
+---
+
 ## 2026-11-18 — #2342 Themis status-diff cooldown and user invocation separation
 
 1. **Snapshot cooldown guard & noise elimination**:
