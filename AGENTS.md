@@ -64,6 +64,13 @@ The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL`
 
 Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See [`docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`](file:///home/ubuntu/agentmanager/docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md).
 
+## Traditional Chinese Mandate (正體/繁體中文鐵律)
+
+依據使用者最高指示與 `.agent/CONSTITUTION.yaml` 之 `traditional_chinese_mandate` 條款（`level: immutable`）：
+- **全系統所有輸出、對話回應、提示詞（System Prompts）、說明文件與代碼註解，嚴禁使用任何簡體中文**。
+- 所有 AI 代理（包括 Antigravity、Codex、Claude 等）回應一律嚴格使用**繁體中文（台灣習慣用語，zh-TW）**。
+- 違者視為嚴重違憲與治理失敗。
+
 ## Documentation Reality Rule (Atomic Doc-Code Parity)
 
 Architecture-sensitive implementation changes and code modifications MUST update at least one authoritative entry-point document in the same change set:

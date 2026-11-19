@@ -988,7 +988,7 @@ class SpecStewardWorker(BasePDCAWorker):
 
     def plan(self, cycle: int) -> dict[str, Any]:
         return {
-            "task": "全系統規格生命週期審計與文檔現實防漂移巡查",
+            "task": "全系統規格生命週期審計、文檔防漂移與不合格任務改寫隊列推進",
             "source": "spec_steward_scheduler",
         }
 
@@ -1016,6 +1016,19 @@ class SpecStewardWorker(BasePDCAWorker):
             else:
                 err_msg = res_check.stderr.strip() or res_spec.stderr.strip()
                 findings.append(f"❌ 規格治理檢測失敗 (發現虛假完工或執行異常): {err_msg[:120]}")
+
+        # 規格改寫隊列巡檢 (Spec Refinement Handoff Check)
+        refinement_file = self.data_root / "runtime" / "spec_refinement_queue.json"
+        if refinement_file.is_file():
+            try:
+                q_data = json.loads(refinement_file.read_text(encoding="utf-8"))
+                unqualified_cnt = q_data.get("total_unqualified", 0)
+                if unqualified_cnt > 0:
+                    findings.append(f"⚠️ 發現 {unqualified_cnt} 項不合格待辦等待改寫具體規格 (排隊中，已交給 Spec Steward)")
+                else:
+                    findings.append("✅ 規格改寫隊列為空，全系統待辦任務規格健康")
+            except Exception as e:
+                findings.append(f"⚠️ 讀取規格改寫隊列失敗: {e}")
 
         return {"action": "governance_spec_audit", "findings": findings, "status": "completed"}
 
@@ -1352,6 +1365,8 @@ class ThemisCommandWorker(BasePDCAWorker):
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
         from scripts.themis_status_diff import run_inventory_diff
         result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True)
+        # 系統 PDCA 背景例行巡檢：傳入 is_user_invocation=False，遵守冷卻閥與變更過濾
+        result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True, is_user_invocation=False)
         delta = result.get("delta", {})
         summary = result.get("current", {}).get("projects_summary", {})
 
