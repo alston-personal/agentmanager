@@ -1,3 +1,15 @@
+## 2026-11-19 — #2345 LLM Reasoning Audit Trail and Reasoning Monitor Viewer
+
+1. **LLM reasoning persistent audit ledger (`reasoning_audit_ledger.jsonl`)**:
+   - Upgraded `reason_with_llm` in `agent_core/base_pdca.py` to automatically append immutable audit records to `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+   - Every invocation captures timestamp, role identity, target project ID, driving model/provider (Claude/Gemini/Fallback), prompting summary, operational context, and full reasoning decision.
+2. **Dedicated CLI inspector (`scripts/reasoning_monitor.py`)**:
+   - Implemented `python3 scripts/reasoning_monitor.py [limit] [role]`: Enables operators to inspect exactly when any role invoked an LLM, what model was used, what diagnosis was produced, and what code/state changes were made.
+3. **Themis status-diff snapshot syntax fix**:
+   - Corrected indentation block in `scripts/themis_status_diff.py` snapshot saving routine.
+
+---
+
 ## 2026-11-19 — #2344 BasePDCAWorker Dual-Hydration and Comprehensive Blocked Handoff
 
 1. **BasePDCAWorker Dual-Hydration & Exception LLM Escalation (`reason_with_llm`)**:

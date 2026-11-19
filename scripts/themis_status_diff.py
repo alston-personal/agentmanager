@@ -597,10 +597,6 @@ def run_inventory_diff(
                 ).strftime("%Y%m%d_%H%M%S")
                 history_file = snapshot_dir / f"snapshot-{timestamp_str}.json"
 
-        # 寫入歷史存檔
-        history_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        # 更新 latest.json
-        latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 history_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 saved = True

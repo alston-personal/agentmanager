@@ -205,6 +205,10 @@ class BasePDCAWorker:
         ]
         claude_bin = next((p for p in claude_paths if p.is_file()), None)
 
+        provider_used = "fallback_rule_engine"
+        status = "DEFERRED"
+        reasoning_text = "本機 LLM CLI 暫時無法直接調用，已保留原始 Context 交付治理鏈。"
+
         if claude_bin:
             try:
                 res = subprocess.run(
@@ -216,38 +220,58 @@ class BasePDCAWorker:
                     timeout=timeout,
                 )
                 if res.returncode == 0 and res.stdout.strip():
-                    return {
-                        "provider": "claude",
-                        "status": "PASS",
-                        "reasoning": res.stdout.strip(),
-                    }
+                    provider_used = "claude"
+                    status = "PASS"
+                    reasoning_text = res.stdout.strip()
             except Exception as e:
                 pass
 
-        gemini_bin = Path("/home/ubuntu/.local/bin/gemini")
-        if gemini_bin.is_file():
-            try:
-                res = subprocess.run(
-                    [str(gemini_bin), "-p", full_prompt, "--approval-mode", "plan", "--skip-trust"],
-                    cwd=str(self.project_root),
-                    stdin=subprocess.DEVNULL,
-                    text=True,
-                    capture_output=True,
-                    timeout=timeout,
-                )
-                if res.returncode == 0 and res.stdout.strip():
-                    return {
-                        "provider": "gemini",
-                        "status": "PASS",
-                        "reasoning": res.stdout.strip(),
-                    }
-            except Exception as e:
-                pass
+        if status != "PASS":
+            gemini_bin = Path("/home/ubuntu/.local/bin/gemini")
+            if gemini_bin.is_file():
+                try:
+                    res = subprocess.run(
+                        [str(gemini_bin), "-p", full_prompt, "--approval-mode", "plan", "--skip-trust"],
+                        cwd=str(self.project_root),
+                        stdin=subprocess.DEVNULL,
+                        text=True,
+                        capture_output=True,
+                        timeout=timeout,
+                    )
+                    if res.returncode == 0 and res.stdout.strip():
+                        provider_used = "gemini"
+                        status = "PASS"
+                        reasoning_text = res.stdout.strip()
+                except Exception as e:
+                    pass
+
+        # 審計存證 (Audit Trail Logging):
+        # 凡角色調用 LLM 進行思考與決策，必須即時追加記錄於資料層之專屬審計台帳
+        audit_dir = self.data_root / "runtime" / "llm_reasoning"
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        audit_file = audit_dir / "reasoning_audit_ledger.jsonl"
+        audit_entry = {
+            "schema": "agentos.llm-reasoning-entry/v1",
+            "timestamp": utc_now_iso(),
+            "role_id": self.role_slug,
+            "project_id": project_id,
+            "provider": provider_used,
+            "status": status,
+            "prompt_summary": (prompt[:120] + "...") if len(prompt) > 120 else prompt,
+            "context_summary": context,
+            "decision_preview": (reasoning_text[:200] + "...") if len(reasoning_text) > 200 else reasoning_text,
+            "full_reasoning": reasoning_text,
+        }
+        try:
+            with open(audit_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(audit_entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
         return {
-            "provider": "fallback_rule_engine",
-            "status": "DEFERRED",
-            "reasoning": "本機 LLM CLI 暫時無法直接調用，已保留原始 Context 交付治理鏈。",
+            "provider": provider_used,
+            "status": status,
+            "reasoning": reasoning_text,
         }
 
     # --- Phase Overridables ---
