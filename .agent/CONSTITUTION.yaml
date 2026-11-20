@@ -45,6 +45,9 @@ principles:
   - id: doc_code_parity_invariant
     level: core
     statement: "代碼與說明文件真實性原子等價：凡有代碼變更，必須同步更新權威說明文件以反映最新實裝狀態；代碼變更而文檔滯後視為架構回歸，日常審計與提交門禁強制攔截。"
+  - id: edge_node_readonly_data_mirror
+    level: immutable
+    statement: "所有 AgentOS 邊緣節點（Node）皆應維護 agent-data 之本地唯讀鏡像（Read-Only Mirror）並定期以 fetch + reset --hard 單向拉取同步，物理鎖死禁止本地 push；所有資料層寫入（Write）一律透過 Remote / agentos-one MCP 寫回雲端唯一真相源（Oracle Core），徹底杜絕多頭寫入與分叉。"
 
 protected_artifacts:
   - .agent/CONSTITUTION.yaml
