@@ -661,7 +661,7 @@ ACCOUNT_HEADER = """<style>
 <strong>AgentOS</strong>
 <span id="agentos-account-identity" class="account-identity" aria-live="polite">正在確認登入帳號…</span>
 <nav aria-label="帳號選單">
-<a href="/welcome">我的 AgentOS</a>
+<a id="agentos-my-entry" href="/welcome">我的 AgentOS</a>
 <a id="agentos-admin-entry" href="/platform" hidden>平台管理</a>
 <a href="/dashboard/api/auth/logout?returnTo=%2F">切換帳號</a>
 <a href="/dashboard/api/auth/logout?returnTo=%2F">登出</a>
@@ -707,7 +707,7 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 </style></head><body><!--agentos-account-header--><main>
 <h1>AgentOS</h1>
 <nav aria-label="AgentOS 主要導覽" style="display:flex;flex-wrap:wrap;gap:14px;padding:10px 0 20px">
-<a href="/welcome" aria-current="page">我的 AgentOS</a>
+<span aria-current="page">帳號與 Realm 狀態（目前頁面）</span>
 <a href="/platform">平台治理（需管理權限）</a>
 <a href="/">登入首頁</a>
 </nav>
@@ -729,6 +729,14 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 (async () => {
   const status = document.getElementById('login-status');
   const retry = document.getElementById('next-action');
+  const myEntry = document.getElementById('agentos-my-entry');
+  // /welcome is the current screen, not a destination. Show a real
+  // authorized workspace link only after session/Realm state is known.
+  if (myEntry) {
+    myEntry.removeAttribute('href');
+    myEntry.setAttribute('aria-current', 'page');
+    myEntry.textContent = '帳號與 Realm 狀態（目前頁面）';
+  }
   try {
     const response = await fetch('/dashboard/api/auth/session', {
       credentials:'same-origin', cache:'no-store'
@@ -737,6 +745,11 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
       if (session.role === 'admin') {
+        if (myEntry) {
+          myEntry.href = '/platform';
+          myEntry.removeAttribute('aria-current');
+          myEntry.textContent = '進入平台治理中心';
+        }
         status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS（平台管理者）。';
         document.getElementById('platform-admin-entry').hidden = false;
         return;
@@ -765,6 +778,11 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
             ' 已經治理核准，但仍等待 ONE 正式開通與帳號授權。此時還不能使用 Realm。';
           actions.hidden = true;
         } else if (data.state === 'realm_initialized') {
+          if (myEntry) {
+            myEntry.href = '/my-one';
+            myEntry.removeAttribute('aria-current');
+            myEntry.textContent = '開啟我的 Virtual ONE';
+          }
           current.textContent = '已建立獨立 Realm：' + data.realm_id +
             '，且此帳號已綁定為 Owner。ONE 執行服務尚待進一步啟動驗收。';
           actions.hidden = true;

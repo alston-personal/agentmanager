@@ -133,6 +133,19 @@ jobs:
           assert verdict=='DUPLICATE'
           print('social_threads_redirect_migration=PASS')
           PY
+      - name: Exclude dangling Oracle-only instruction symlink from hosted pytest discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This is a fresh GitHub-hosted checkout, not an Oracle worktree.
+          # The tracked link points outside the checkout and pytest scandir
+          # follows it, raising EACCES before collecting focused test files.
+          # Unlink only the dangling checkout symlink, not its target.
+          if [ -L CLAUDE.md ] && [ ! -e CLAUDE.md ]; then
+            test "$(readlink CLAUDE.md)" = "/home/ubuntu/agent-data/templates/CLAUDE.md"
+            unlink CLAUDE.md
+            echo "hosted_pytest_dangling_instruction_symlink=EXCLUDED"
+          fi
       - name: Run shared runtime contract suite
         run: >-
           python -m pytest -q

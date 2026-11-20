@@ -142,7 +142,7 @@ def test_welcome_always_links_back_to_protected_platform():
     from agent_core.companion_web import render_welcome_html
     html = render_welcome_html()
     assert 'href="/platform"' in html
-    assert 'href="/welcome" aria-current="page"' in html
+    assert '<span aria-current="page">帳號與 Realm 狀態（目前頁面）</span>' in html
     assert "平台治理（需管理權限）" in html
     assert "登入首頁" in html
 
