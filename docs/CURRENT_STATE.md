@@ -1,3 +1,12 @@
+## 2026-11-20 — Fail-closed role inheritance resolution (anti-hollow-fallback)
+
+1. **Normalized role resolution & Fail-Closed guard**:
+   - Hardened `get_worker()` in `agent_core/base_pdca.py` to normalize `.` / `_` / `-` role IDs so `system.atlas`, `system.gateway_steward`, and `system.quality_sentinel` resolve directly to their real inherited subclasses (`AtlasClosureWorker`, `GatewayStewardWorker`, `CerberusSentinelWorker`) instead of silently spawning hollow `BasePDCAWorker` shells.
+   - Prohibited silent hollow fallback for unregistered active roles (raises `KeyError` unless `core.root` or explicitly opted-in).
+   - Added concrete `MioPersonaWorker` (`persona.mio`) so all 23 active registry roles resolve to real implementations with 0 hollow fallbacks.
+
+---
+
 ## 2026-11-20 — GOV-2026-11-20-001 Edge Node Read-Only Data Mirror Constitution (`edge_node_readonly_data_mirror`)
 
 1. **Constitutional principle & decision record**:

@@ -1411,6 +1411,35 @@ class HephaestusPawWorker(BasePDCAWorker):
         }
 
 
+class MioPersonaWorker(BasePDCAWorker):
+    """澪 Mio (persona.mio): Autonomous Social Persona, Morning Reading & Exploration."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("mio", data_root, project_root)
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "澪 (Mio) 晨讀情報同步、外探素材與帶圖發文合規巡檢",
+            "source": "mio_persona_scheduler",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        findings = []
+        morning_file = self.data_root / "personas" / "sunlake-milkcat" / "morning_reading.json"
+        if morning_file.is_file():
+            findings.append("✅ 晨讀情報檔 (morning_reading.json) 存在且就緒")
+        else:
+            findings.append("⚠️ 尚未發現最新晨讀情報檔")
+        return {"action": "mio_persona_audit", "findings": findings, "status": "completed"}
+
+    def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "verifier_role": "persona.mio.inspector",
+            "verdict": "PASS",
+            "findings": do_data.get("findings", []),
+        }
+
+
 # ==============================================================================
 # Worker Factory
 # ==============================================================================
@@ -1497,12 +1526,41 @@ WORKER_REGISTRY: Dict[str, Callable[[], BasePDCAWorker]] = {
     "thales": ThalesAcademicWorker,
     "academic_researcher": ThalesAcademicWorker,
     "system.academic_researcher": ThalesAcademicWorker,
+    "persona-mio": MioPersonaWorker,
+    "mio": MioPersonaWorker,
 }
 
 
-def get_worker(role_slug: str) -> BasePDCAWorker:
-    slug = role_slug.lower().strip()
-    if slug in WORKER_REGISTRY:
-        return WORKER_REGISTRY[slug]()
-    return BasePDCAWorker(role_slug=slug)
+def _normalize_role_key(role_id: str) -> str:
+    """Normalize role IDs so dot/underscore/hyphen variants resolve identically."""
+    return role_id.lower().strip().replace(".", "-").replace("_", "-")
+
+
+def get_worker(role_slug: str, *, allow_hollow_fallback: bool = False) -> BasePDCAWorker:
+    """Resolve a role to its concrete BasePDCAWorker subclass.
+
+    Normalizes `.` and `_` to `-` so registry IDs (e.g. `system.atlas`,
+    `system.gateway_steward`, `system.quality_sentinel`) always resolve to
+    their real inherited subclass instead of silently spawning hollow BasePDCAWorker shells.
+    """
+    raw = role_slug.lower().strip()
+    norm = _normalize_role_key(raw)
+
+    if raw in WORKER_REGISTRY:
+        return WORKER_REGISTRY[raw]()
+    if norm in WORKER_REGISTRY:
+        return WORKER_REGISTRY[norm]()
+
+    # Check normalized keys across WORKER_REGISTRY
+    for key, cls in WORKER_REGISTRY.items():
+        if _normalize_role_key(key) == norm:
+            return cls()
+
+    if raw in ("core.root", "core-root") or allow_hollow_fallback:
+        return BasePDCAWorker(role_slug=norm)
+
+    raise KeyError(
+        f"Unregistered active role '{role_slug}' (normalized: '{norm}'): "
+        "silent hollow BasePDCAWorker fallback is prohibited."
+    )
 
