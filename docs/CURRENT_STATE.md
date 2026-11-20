@@ -1,3 +1,11 @@
+## 2026-11-20 — Atlas Avatar (分靈體) PreInvocation Soul Hydration
+
+1. **Unified Task IR + Atlas Role Soul hydration**:
+   - Enhanced `agentos_node/antigravity_one_hook.py` (`_load_atlas_avatar`) so every fresh conversation hydrated by ONE PreInvocation automatically receives both `canonical_ir` and `role_avatar` (`system.atlas` identity, mission, `pitfalls_guardrails.md`, governance index path, and self-awakening distillation rule).
+   - Verified with `tests/test_antigravity_one_hook.py` (10/10 PASS).
+
+---
+
 ## 2026-11-20 — Multi-Layer Abstract Role Hierarchy (`agent_core/roles/abstract_bases.py`)
 
 1. **Software engineering & leaf-only execution architecture**:
