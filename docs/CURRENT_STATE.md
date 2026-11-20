@@ -1,3 +1,12 @@
+## 2026-11-20 — Atlas Fork-and-Return Experience Consolidation (`agent_core/atlas_inbox.py`)
+
+1. **Concurrency-safe Shadow-Clone memory model**:
+   - Upgraded `agentos_node/antigravity_one_hook.py` to hydrate each conversation as `atlas_fork_readonly_snapshot` with an append-only `experience_return_inbox` path, preventing multi-conversation lost updates.
+   - Implemented `agent_core/atlas_inbox.py` (`submit_experience_card`, `consolidate_atlas_inbox`) for append-only shard experience submission and single-writer deduplicated consolidation into Atlas core memory.
+   - Verified with `tests/test_atlas_inbox.py` and `tests/test_antigravity_one_hook.py` (11/11 PASS).
+
+---
+
 ## 2026-11-20 — Fail-closed role inheritance resolution (anti-hollow-fallback)
 
 1. **Normalized role resolution & Fail-Closed guard**:

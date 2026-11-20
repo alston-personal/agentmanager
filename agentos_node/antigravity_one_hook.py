@@ -214,12 +214,17 @@ def _load_atlas_avatar(data_root: Path) -> dict[str, Any]:
 
     return {
         "role_id": "system.atlas",
-        "avatar_mode": "atlas_shard",
+        "avatar_mode": "atlas_fork_readonly_snapshot",
         "mission": mission,
         "pitfalls_guardrails_path": str(pitfalls_file),
         "pitfalls_guardrails": pitfalls_excerpt,
+        "experience_return_inbox": str(atlas_dir / "inbox"),
         "governance_index_path": str(Path(data_root) / "knowledge" / "GOVERNANCE_INDEX.md"),
-        "self_awakening_rule": "每輪對話皆為 Atlas 分靈體；若發現架構缺陷、用戶糾正或新決策，主動提煉沉澱回 pitfalls_guardrails.md 與 Canonical IR。",
+        "self_awakening_rule": (
+            "本對話為 Atlas 唯讀分靈體 (Fork Snapshot)，禁止多對話直接覆寫本體記憶；"
+            "若發現新架構缺陷、用戶糾正或論文成長證據，請以 Append-Only 投遞卡片至 experience_return_inbox，"
+            "由 Atlas 本體統一去重回歸吸收。"
+        ),
     }
 
 
