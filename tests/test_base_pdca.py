@@ -108,6 +108,15 @@ class BasePDCATests(unittest.TestCase):
         hermes = get_worker("hermes")
         self.assertEqual(hermes.role_slug, "sector-hermes")
 
+        # Dot/underscore registry IDs must resolve to concrete subclasses, never hollow fallbacks
+        self.assertEqual(get_worker("system.atlas").role_slug, "system-atlas")
+        self.assertEqual(get_worker("system.gateway_steward").role_slug, "system-gateway-steward")
+        self.assertEqual(get_worker("system.quality_sentinel").role_slug, "system-quality-sentinel")
+        self.assertEqual(get_worker("persona.mio").role_slug, "mio")
+
+        with self.assertRaises(KeyError):
+            get_worker("nonexistent.hollow.role")
+
 
 if __name__ == "__main__":
     unittest.main()
