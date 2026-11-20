@@ -1,3 +1,11 @@
+## 2026-11-20 — Universal Atlas Fork Snapshot in ONE MCP `resolve()` (`agentos_node/one_mcp.py`)
+
+1. **Cross-surface Atlas Avatar parity (Gemini, Codex, Claude Code, Web GPT)**:
+   - Added `_load_universal_atlas_avatar()` to `_project_resolve()` in `agentos_node/one_mcp.py` so every MCP caller (Antigravity, Claude Code, Codex CLI, Web GPT MCP) automatically receives `role_avatar` (`atlas_fork_readonly_snapshot` + `pitfalls_guardrails` + `experience_return_inbox`) alongside `canonical_ir`.
+   - Verified with `tests/test_one_mcp.py` and `tests/test_antigravity_one_hook.py` (18/18 PASS).
+
+---
+
 ## 2026-11-20 — Atlas Fork-and-Return Experience Consolidation (`agent_core/atlas_inbox.py`)
 
 1. **Concurrency-safe Shadow-Clone memory model**:
