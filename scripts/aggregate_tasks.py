@@ -39,11 +39,11 @@ def parse_metadata(content):
     return meta
 
 def is_task_qualified(content: str) -> bool:
-    """Check if task conforms to TASK_SPECIFICATION_STANDARD.md (has verification command)."""
-    if "驗收:" in content or "verify:" in content:
+    """Check if task conforms to TASK_SPECIFICATION_STANDARD.md (must have an executable verification command in backticks)."""
+    # 必須包含驗收/verify關鍵字後接反引號可執行指令，或在行內直接指定明確 shell 可執行指令
+    if re.search(r"(?:驗收|verify):\s*`\s*(?:pytest|python3|npm|test|curl|node|ss|chmod|git|bash)\b[^`]*`", content):
         return True
-    # Match backticked executable shell commands
-    if re.search(r"`[^`]*(?:pytest|python3|npm|test|curl|node|ss|chmod|git|bash)[^`]*`", content):
+    if re.search(r"`\s*(?:pytest|python3|npm|test -|curl|node|ss -|chmod|git|bash)\b[^`]*`", content):
         return True
     return False
 
@@ -70,15 +70,17 @@ def aggregate_tasks():
             tasks = todo_match.group(1).strip().split('\n')
             for task in tasks:
                 t_strip = task.strip()
-                if t_strip.startswith("- [ ]") or t_strip.startswith("- [x]"):
+                if t_strip.startswith("- [ ]") or t_strip.startswith("- [x]") or t_strip.startswith("- [!]"):
                     is_done = "[x]" in t_strip
-                    qualified = is_task_qualified(t_strip) if not is_done else True
+                    is_blocked = "[!]" in t_strip
+                    qualified = is_task_qualified(t_strip) if not is_done and not is_blocked else (True if is_done else False)
                     labeled_task = {
                         "content": f"{t_strip} `[{project_name}]` {priority_label} {cat_label}",
                         "priority": meta["priority"],
                         "category": meta["category"],
                         "project": project_name,
                         "is_done": is_done,
+                        "is_blocked": is_blocked,
                         "is_qualified": qualified,
                     }
                     all_tasks.append(labeled_task)
@@ -90,8 +92,9 @@ def aggregate_tasks():
     lines = ["# 📋 Global Agent OS Todo Hub (Ranked)\n"]
     lines.append(f"*Last Updated: {os.popen('date').read().strip()}*\n\n")
     
-    qualified_pending = [t for t in all_tasks if not t["is_done"] and t["is_qualified"]]
-    unqualified_pending = [t for t in all_tasks if not t["is_done"] and not t["is_qualified"]]
+    qualified_pending = [t for t in all_tasks if not t["is_done"] and not t["is_blocked"] and t["is_qualified"]]
+    unqualified_pending = [t for t in all_tasks if not t["is_done"] and not t["is_blocked"] and not t["is_qualified"]]
+    blocked_pending = [t for t in all_tasks if not t["is_done"] and t["is_blocked"]]
     completed = [t for t in all_tasks if t["is_done"]]
     
     lines.append("## 🎯 Qualified Executable Tasks (合格可執行隊列 - 滿足五大要件)\n")
@@ -144,6 +147,44 @@ def aggregate_tasks():
 
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         f.write(new_content)
+
+    # 4. 資料流轉正義 (Data Handoff Lifecycle):
+    # 不合格任務與 [!] 阻斷任務嚴禁就地拋棄或死鎖！自動分流至規格改寫與異常排解隊列交付下一手 (Spec Steward / The Claw)
+    refinement_queue_path = os.path.join(DATA_ROOT, "runtime", "spec_refinement_queue.json")
+    os.makedirs(os.path.dirname(refinement_queue_path), exist_ok=True)
+    all_handoff_items = []
+    for t in unqualified_pending:
+        all_handoff_items.append({
+            "task": t["content"],
+            "project": t["project"],
+            "priority": t["priority"],
+            "category": t["category"],
+            "status": "AWAITING_REFINEMENT",
+            "reason": "MISSING_VERIFICATION_COMMAND_OR_SCOPE",
+        })
+    for t in blocked_pending:
+        all_handoff_items.append({
+            "task": t["content"],
+            "project": t["project"],
+            "priority": t["priority"],
+            "category": t["category"],
+            "status": "BLOCKED_INCIDENT",
+            "reason": "HISTORICAL_VERIFICATION_FAILURE_AWAITING_REMEDIATION",
+        })
+
+    refinement_payload = {
+        "schema": "agentos.spec-refinement-queue/v1",
+        "steward": "governance.spec_steward",
+        "updated_at": os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip(),
+        "total_unqualified": len(unqualified_pending),
+        "total_blocked_incidents": len(blocked_pending),
+        "total_items": len(all_handoff_items),
+        "queue": all_handoff_items
+    }
+    import json
+    with open(refinement_queue_path, "w", encoding="utf-8") as rf:
+        rf.write(json.dumps(refinement_payload, indent=2, ensure_ascii=False) + "\n")
+    print(f"📋 成功將 {len(unqualified_pending)} 項不合格任務與 {len(blocked_pending)} 項阻斷工單排入規格改寫隊列: {refinement_queue_path}")
 
 if __name__ == "__main__":
     aggregate_tasks()

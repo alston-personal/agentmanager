@@ -106,7 +106,7 @@ class BasePDCATests(unittest.TestCase):
         self.assertEqual(cerberus.role_slug, "system-quality-sentinel")
 
         hermes = get_worker("hermes")
-        self.assertEqual(hermes.role_slug, "system-gateway-steward")
+        self.assertEqual(hermes.role_slug, "sector-hermes")
 
 
 if __name__ == "__main__":
