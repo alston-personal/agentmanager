@@ -82,6 +82,24 @@ jobs:
           r=json.load(open(sys.argv[1],encoding='utf-8'))
           expected=sys.argv[2]
           action=sys.argv[3]
+          # Diagnostic metadata only: never print full receipt, stdout, stderr or credentials.
+          # A failed source attestation must remain a hard failure, not a fallback.
+          source=r.get('source_commit')
+          print('bootstrap_receipt_source_state='+(
+              'MATCH' if source==expected else
+              'MISSING' if source is None or source=='' else 'MISMATCH'))
+          print('bootstrap_receipt_action_match='+str(r.get('action')==action).lower())
+          print('bootstrap_receipt_executor_match='+str(
+              r.get('executor_user')=='ubuntu' and r.get('executor_uid')==1001).lower())
+          print('bootstrap_receipt_ok='+str(r.get('ok') is True).lower())
+          error=r.get('error')
+          if isinstance(error,str) and error:
+              error_kind=error.split(':',1)[0]
+              if error_kind in ('PermissionError','ValueError','RuntimeError',
+                                'FileNotFoundError','TimeoutExpired','OSError'):
+                  print('bootstrap_receipt_error_class='+error_kind)
+              else:
+                  print('bootstrap_receipt_error_class=OTHER')
           assert r.get('schema')=='agentos.bootstrap-receipt/v1'
           assert r.get('action')==action
           assert r.get('executor_user')=='ubuntu'
