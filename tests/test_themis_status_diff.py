@@ -154,6 +154,24 @@ class TestThemisStatusDiff(unittest.TestCase):
         self.assertIsInstance(worker, ThemisCommandWorker)
         self.assertEqual(worker.role_slug, "governance-themis-command-steward")
 
+    def test_cooldown_and_user_invocation_separation(self):
+        # 1. 初始背景盤點 (建立 initial baseline)
+        res1, md1 = run_inventory_diff(Path("."), self.mock_data, save=True, is_user_invocation=False)
+        self.assertTrue(res1["persistence"]["saved"])
+        self.assertEqual(res1["persistence"]["reason"], "INITIAL_BASELINE")
+
+        # 2. 短時間內再次背景盤點（無實質異動，應觸發冷卻閥跳過存檔）
+        res2, md2 = run_inventory_diff(Path("."), self.mock_data, save=True, is_user_invocation=False, cooldown_seconds=3600)
+        self.assertFalse(res2["persistence"]["saved"])
+        self.assertIn("COOLDOWN_ACTIVE", res2["persistence"]["reason"])
+
+        # 3. 使用者終端下指令（記錄至 user_latest，不污染系統 latest）
+        res3, md3 = run_inventory_diff(Path("."), self.mock_data, save=True, is_user_invocation=True)
+        self.assertTrue(res3["persistence"]["saved"])
+        self.assertEqual(res3["persistence"]["reason"], "USER_INVOCATION_RECORDED")
+        user_latest = self.mock_data / "snapshots" / "inventory" / "user_latest.json"
+        self.assertTrue(user_latest.is_file())
+
     def test_cli_fails_closed_on_non_authoritative_data_root(self):
         import os
         import subprocess
