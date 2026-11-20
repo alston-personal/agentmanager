@@ -26,6 +26,86 @@
 
 ---
 
+## 2026-11-19 — #2346 The Paw Auto-Remediation and Bounded LLM Escalation Circuit
+
+1. **Paw self-healing and missing module construction**:
+   - Upgraded `scripts/role_pdca_runner.py` Do phase: When an acceptance command fails due to missing modules or syntax errors, Paw automatically triggers `reason_with_llm` and detects missing targets (e.g. `Cannot find module`, `No such file`).
+   - Automatically constructs target test scaffolds (`.js`, `.ts`, `.py`) and performs an immediate in-cycle retry before conceding failure.
+   - Successfully verified on `[wde-p1-04]` constructing `web-duel-extension/tests/relay.test.js`.
+2. **Bounded CLI timeout guard in `BasePDCAWorker`**:
+   - Implemented a 5-second defensive timeout ceiling in `agent_core/base_pdca.py` when invoking local LLM CLIs during headless PDCA heartbeats, preventing unattended interactive prompt freezes.
+   - Captured audit traces in `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+
+---
+
+## 2026-11-19 — #2345 LLM Reasoning Audit Trail and Reasoning Monitor Viewer
+
+1. **LLM reasoning persistent audit ledger (`reasoning_audit_ledger.jsonl`)**:
+   - Upgraded `reason_with_llm` in `agent_core/base_pdca.py` to automatically append immutable audit records to `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+   - Every invocation captures timestamp, role identity, target project ID, driving model/provider (Claude/Gemini/Fallback), prompting summary, operational context, and full reasoning decision.
+2. **Dedicated CLI inspector (`scripts/reasoning_monitor.py`)**:
+   - Implemented `python3 scripts/reasoning_monitor.py [limit] [role]`: Enables operators to inspect exactly when any role invoked an LLM, what model was used, what diagnosis was produced, and what code/state changes were made.
+3. **Themis status-diff snapshot syntax fix**:
+   - Corrected indentation block in `scripts/themis_status_diff.py` snapshot saving routine.
+
+---
+
+## 2026-11-19 — #2344 BasePDCAWorker Dual-Hydration and Comprehensive Blocked Handoff
+
+1. **BasePDCAWorker Dual-Hydration & Exception LLM Escalation (`reason_with_llm`)**:
+   - Upgraded `agent_core/base_pdca.py` with `load_cognitive_ir()` (Character IR anchor) and `load_project_ir(project_id)` (Project IR dynamic hydration).
+   - Implemented `reason_with_llm()` on BasePDCAWorker: Automatically injects character identity, directive, values, and project essence into Claude/Gemini CLI when encountering exceptions or ambiguous tasks, replacing hardcoded failure drops.
+2. **Comprehensive blocked task handoff (`aggregate_tasks.py`)**:
+   - Extended `scripts/aggregate_tasks.py` to capture legacy `[!]` blocked tasks across all projects, preventing historical verification failures from decaying as silent ghosts.
+   - Automatically enqueues both unqualified draft tasks (`AWAITING_REFINEMENT`) and blocked incidents (`BLOCKED_INCIDENT`) into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+3. **Security-audit port verification & project IR foundation**:
+   - Re-verified host port bindings with `ss -tulpn`, confirmed internal loopback isolation (ports 8090, 8085, 8765-8776), and marked 20 blocked port inspection items as closed with verification commands.
+   - Authored authoritative `agentos.project-ir/v1` specifications for `antigravity-duel-plugin` and `web-duel-extension`.
+
+---
+
+## 2026-11-19 — #2343 Task Specification Handoff Queue and Duel Tasks Concrete Breakdown
+
+1. **Unqualified task refinement handoff queue (資料流轉閉環)**:
+   - Upgraded `scripts/aggregate_tasks.py`: Unqualified tasks lacking verification commands are no longer simply abandoned in a dead-end blocked section. They are automatically routed into a structured handoff queue (`$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`) under the stewardship of `governance.spec_steward`.
+   - Enhanced `SpecStewardWorker` in `agent_core/base_pdca.py` to audit and consume the refinement queue during its governance PDCA cycles, upholding the constitutional invariant that data must either be fully processed or handed off to the next owner.
+2. **Antigravity Duel Plugin and Web Duel Extension task operationalization**:
+   - Resolved the long-standing blockage on multi-agent debate and duel projects (`antigravity-duel-plugin` and `web-duel-extension`).
+   - Aligned implemented test contracts with `STATUS.md` and decomposed remaining milestone goals into concrete executable verification micro-tasks (`test -f`, `npm test`, `node test`).
+   - Unlocked Priority 9 and Priority 7 pipelines for autonomous execution by The Paw.
+
+---
+
+## 2026-11-19 — #2354 Base Role universal LLM reasoning fallback & audit trail
+
+1. **Universal LLM reasoning integration in `BasePDCAWorker`**:
+   - Refactored `agent_core/base_pdca.py` so that all 22+ active roles inheriting from `BasePDCAWorker` automatically trigger bounded LLM decision-making (`reason_with_llm()`) during execution exceptions or validation failures (`FAIL`).
+   - Dual-hydrates Character Cognitive IR (`load_cognitive_ir`) and Target Project IR (`load_project_ir`) before reasoning to preserve role identity and project context.
+   - Enforces a bounded 5s execution timeout with non-blocking fallback to `fallback_rule_engine (DEFERRED)` to prevent crontab PDCA lockup.
+2. **Persistent reasoning audit trail & monitoring**:
+   - Added persistent logging to `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+   - Created CLI monitor `scripts/reasoning_monitor.py` for reviewing real-time model invocations, decision previews, and role remediations.
+3. **Spec refinement queue integration for blocked tasks**:
+   - In `scripts/aggregate_tasks.py`, legacy `[!]` blocked tasks are routed as `BLOCKED_INCIDENT` into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+   - Hardened `is_task_qualified()` regex to require explicit shell execution patterns with word boundaries, preventing freeform text with embedded tool names (e.g. `wow-nav-assist`) from falsely leaking into execution queues.
+   - `SpecStewardWorker` audits and claims blocked items for spec reconstruction instead of leaving them in dead-end queues.
+
+---
+
+## 2026-11-18 — #2342 Themis status-diff cooldown and user invocation separation
+
+1. **Snapshot cooldown guard & noise elimination**:
+   - Refactored `scripts/themis_status_diff.py` and `agent_core/base_pdca.py` with `should_persist_snapshot` cooldown check (minimum 6-hour interval unless material changes to Git SHA, project directory, or TODO items occur).
+   - Eliminated high-frequency disk writes and snapshot fragmentation during routine 10-minute PDCA sweeps.
+2. **User interactive invocation separation**:
+   - Differentiated user interactive command invocations from background sweeps.
+   - User queries record to `user_latest.json` and default to comparing against `start-of-day` or the previous user checkpoint, preventing routine background sweeps from washing out user-visible deltas.
+   - Preserved unit test coverage in `tests/test_themis_status_diff.py`.
+3. **Historical snapshot pruning**:
+   - Safely pruned 170 redundant 10-minute snapshot files from `$AGENT_DATA_ROOT/snapshots/inventory/`, preserving key daily checkpoints.
+
+---
+
 ## 2026-11-17 — #1682 Role task handoff bus with ACK handshake, priority queues, and dynamic registry-driven PDCA
 
 1. **Role task handoff bus with bidirectional ACK protocol**:
