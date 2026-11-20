@@ -131,6 +131,29 @@ def _project_continuation(value: Any) -> dict[str, Any] | None:
     )
 
 
+def _load_universal_atlas_avatar(data_root: Path | None = None) -> dict[str, Any]:
+    """Load the read-only Atlas Fork Snapshot for ALL MCP callers (Gemini, GPT, Codex, Claude)."""
+    root = data_root or Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+    atlas_dir = root / "personas" / "system-atlas"
+    pitfalls_file = atlas_dir / "pitfalls_guardrails.md"
+    pitfalls_excerpt = ""
+    if pitfalls_file.is_file():
+        try:
+            pitfalls_excerpt = pitfalls_file.read_text(encoding="utf-8").strip()[:1600]
+        except Exception:
+            pitfalls_excerpt = ""
+    return {
+        "role_id": "system.atlas",
+        "avatar_mode": "atlas_fork_readonly_snapshot",
+        "pitfalls_guardrails": pitfalls_excerpt,
+        "experience_return_inbox": str(atlas_dir / "inbox"),
+        "self_awakening_rule": (
+            "本對話為 Atlas 唯讀分靈體 (Fork Snapshot)，禁止多對話直接覆寫本體記憶；"
+            "若發現新架構缺陷、用戶糾正或論文成長證據，請以 Append-Only 投遞卡片至 experience_return_inbox。"
+        ),
+    }
+
+
 def _project_resolve(payload: dict[str, Any]) -> dict[str, Any]:
     """Keep continuity state while dropping source paths/runtime manifests."""
     project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
@@ -167,6 +190,7 @@ def _project_resolve(payload: dict[str, Any]) -> dict[str, Any]:
         "continuation": _project_continuation(payload.get("continuation")),
         "node_context": safe_node_context,
         "next_action": payload.get("next_action"),
+        "role_avatar": payload.get("role_avatar") or _load_universal_atlas_avatar(),
         "availability": payload.get("availability") or {},
         "provenance": payload.get("provenance") or {},
     }
