@@ -1,3 +1,12 @@
+## 2026-11-20 — Multi-Layer Abstract Role Hierarchy (`agent_core/roles/abstract_bases.py`)
+
+1. **Software engineering & leaf-only execution architecture**:
+   - Introduced `agent_core/roles/abstract_bases.py` implementing a strict multi-layer `abc.ABC` hierarchy: `BaseRoleWorker` -> domain abstract bases (`GovernanceRoleBase`, `SystemInfraRoleBase`, `SectorExecutorBase`, `ProductCreatorBase`) -> concrete leaf workers.
+   - Enforces Dependency Injection (`RoleContext`), explicit typed PDCA contracts (`PlanSpec`, `DoOutput`, `CheckVerdict`), `__init_subclass__` leaf-only auto-registration (`inspect.isabstract` guard), and fail-closed `resolve_leaf()` lookup.
+   - Verified with `tests/test_role_abstract_hierarchy.py` (4/4 PASS).
+
+---
+
 ## 2026-11-20 — GOV-2026-11-20-001 Edge Node Read-Only Data Mirror Constitution (`edge_node_readonly_data_mirror`)
 
 1. **Constitutional principle & decision record**:
