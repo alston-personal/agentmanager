@@ -1,3 +1,14 @@
+## 2026-11-20 — GOV-2026-11-20-001 Edge Node Read-Only Data Mirror Constitution (`edge_node_readonly_data_mirror`)
+
+1. **Constitutional principle & decision record**:
+   - Enshrined `edge_node_readonly_data_mirror` (`level: immutable`) in `.agent/CONSTITUTION.yaml` and documented `docs/governance/decisions/GOV-2026-11-20-001-edge-node-readonly-data-mirror.md`.
+   - Mandates CQRS read/write separation for all AgentOS edge nodes: local `agent-data` clones must operate strictly as read-only mirrors synchronized via one-way `git fetch` + `git reset --hard`, with local `git push` physically disabled (`DISABLED_READ_ONLY_MIRROR`). All mutations must write remotely to Oracle Core via `agentos-one` MCP or Control Plane APIs.
+2. **Executable enforcement & unit tests**:
+   - Implemented `agentos_node/data_mirror.py` (`ensure_readonly_push_lock`, `verify_readonly_mirror`, `sync_readonly_mirror`).
+   - Verified with unit tests in `tests/test_edge_data_mirror.py` (3/3 PASS).
+
+---
+
 ## 2026-11-19 — #2198 AgentOS welcome navigation: source fix awaiting Oracle/browser verification
 
 - **Confirmed cause:** the `/welcome` primary `我的 AgentOS` link and shared account header both pointed back to `/welcome`, making an authenticated platform admin's click appear inert. This is a UI routing defect, not evidence of a failed OAuth login or deployed-version regression.
