@@ -208,6 +208,10 @@ def test_oracle_readonly_control_plane_audit_parses_proc_nul_and_redacts_owners(
     assert 'disabled_push_caps.update(names)' in source
     assert 'elif capability in disabled_push_caps:' in source
     assert 'missing_runtime_reasons[reason] += 1' in source
+    assert '"SELECT status, manifest_json FROM nodes"' in source
+    assert '"nononline_pull_capability_registered": 0' in source
+    assert '"no_nonline_pull_capability_registration": 0' in source
+    assert 'observed["missing_push_pull_history"] = missing_push_pull_history' in source
     assert 'service restart' not in source.split("  control-plane-readonly:", 1)[1].lower()
 
 
