@@ -106,6 +106,15 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - name: Fence Teams cutover to exact approved main SHA
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_MAIN_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          test "${GITHUB_REF}" = refs/heads/main
+          test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
