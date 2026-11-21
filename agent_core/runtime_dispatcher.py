@@ -25,6 +25,7 @@ import uuid
 
 from runtime_core.canonical_ir import CanonicalIR
 
+from .dispatch_sweep_health import publish_sweep_heartbeat
 from .distributed_control_plane import DistributedControlPlane
 
 
@@ -674,6 +675,7 @@ class RuntimeDispatcher:
         *,
         interval_seconds: float = 5.0,
         limit: int = 100,
+        heartbeat_path: str | None = None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("interval_seconds must be > 0")
@@ -695,4 +697,13 @@ class RuntimeDispatcher:
                 if failure_reported:
                     logging.getLogger(__name__).info("runtime dispatch sweep recovered")
                 failure_reported = False
+            if heartbeat_path:
+                try:
+                    publish_sweep_heartbeat(heartbeat_path, healthy=not failure_reported)
+                except OSError:
+                    # Telemetry must not stop dispatch. A missing heartbeat
+                    # remains UNKNOWN/FAIL in the independent live audit.
+                    logging.getLogger(__name__).warning(
+                        "runtime dispatch heartbeat unavailable"
+                    )
             stop_event.wait(interval_seconds)
