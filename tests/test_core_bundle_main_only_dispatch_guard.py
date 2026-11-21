@@ -22,7 +22,8 @@ def test_core_bundle_deployment_requires_explicit_exact_main():
     assert "github.ref_name == 'core/integration'" not in guard
     assert "EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}" in jobs
     assert 'test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"' in jobs
-    assert 'test "${GITHUB_REF}" = refs/heads/main' in jobs
+    assert 'test "${GITHUB_REF_NAME}" = main' in jobs
+    assert 'test "${GITHUB_REF_TYPE}" = branch' in jobs
     teams = workflow.split("\n  teams-immutable-cutover:\n", 1)[1].split("\n  converge:\n", 1)[0]
     assert "inputs.teams_only == true" in teams
     assert "github.ref_name == 'main'" in teams
