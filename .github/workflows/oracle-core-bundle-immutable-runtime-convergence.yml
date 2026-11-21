@@ -6,43 +6,19 @@ name: Oracle Core Bundle Immutable Runtime Convergence
 # employee-worker-hotset-recovery-20261012
 # system-worker-post-cutover-verification-20261012
 
+# Deployment is operator-only from protected main; no legacy branch push trigger.
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
-      - '.agent/scripts/agentos-employee-worker-host.service'
-      - '.agent/scripts/agentos-employee-worker-host-system.service'
-      - 'scripts/install_systemd_user.sh'
-      - 'scripts/install_services.py'
-      - 'scripts/work_completion.py'
-      - 'scripts/issue_work_intake.py'
-      - 'scripts/approved_wow_paw_handoff.py'
-      - 'scripts/completion_watchdog_tick.py'
-      - 'schedule.yaml'
-      - 'tests/test_completion_watchdog_tick.py'
-      - 'tests/test_approved_wow_paw_handoff.py'
-      - 'tests/test_issue_work_intake.py'
-      - '.agent/roles/**'
-      - 'agent_core/role_runtime.py'
-      - 'agent_core/employee_skills.py'
-      - 'agentos_node/employee_wake_node.py'
-      - 'agentos_node/hermes_worker.py'
-      - 'agentos_node/hermes_worker_cli.py'
-      - 'agentos_node/hermes_metadata_feed.py'
-      - 'agent_core/hermes_scan_policy.py'
-      - 'agent_core/hermes_github_scan.py'
-      - 'agent_core/hermes_due_cycle.py'
-      - 'agentos_node/product_employee_worker.py'
-      - 'agentos_node/completion_470_status_provider.py'
-      - 'agentos_node/product_employee_worker_cli.py'
-      - 'agentos_node/employee_worker_host_runtime.py'
-      - 'governance/employee-worker-adapters-v2.json'
-      - 'governance/employee-skills.json'
-      - 'governance/paw-employee.json'
-      - 'scripts/bootstrap_product_employees.py'
   workflow_dispatch:
     inputs:
+      expected_main_sha:
+        description: "Required exact protected main commit SHA (40 lowercase hex)"
+        required: true
+        type: string
+      core_bundle_approved:
+        description: "Explicit operator confirmation for broad Core bundle cutover"
+        required: true
+        type: boolean
+        default: false
       teams_only:
         description: "Operator-approved exact-main Teams-only cutover (never broad Core)"
         required: false
@@ -160,7 +136,7 @@ jobs:
           echo "teams_cutover_other_core_units=UNTOUCHED"
 
   converge:
-    if: (github.event_name == 'workflow_dispatch' && inputs.teams_only != true) || (github.event_name == 'push' && github.ref_name == 'core/integration')
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.teams_only != true && inputs.core_bundle_approved == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -168,6 +144,15 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - name: Fence broad deploy to explicitly acknowledged exact main SHA
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_MAIN_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          test "${GITHUB_REF}" = refs/heads/main
+          test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
