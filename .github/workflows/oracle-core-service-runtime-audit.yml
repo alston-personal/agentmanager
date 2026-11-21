@@ -221,6 +221,35 @@ jobs:
               observed["configured_interval_positive"] = (
                   float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")) > 0
               )
+              # Heartbeat is emitted by the sweep itself, not inferred from
+              # PID/service liveness. Validate age, PID and process generation.
+              observed["sweep_heartbeat_reason"] = "not_attested"
+              try:
+                  import importlib.util, time
+                  ticks = os.sysconf("SC_CLK_TCK")
+                  stat_tail = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+                  started = time.time() - float(Path("/proc/uptime").read_text().split()[0]) + int(stat_tail[19]) / ticks
+                  module_path = cwd / "agent_core" / "dispatch_sweep_health.py"
+                  if module_path.is_file():
+                      spec = importlib.util.spec_from_file_location("installed_dispatch_sweep_health", module_path)
+                      if spec is None or spec.loader is None:
+                          raise ValueError("missing_module_loader")
+                      module = importlib.util.module_from_spec(spec)
+                      spec.loader.exec_module(module)
+                      heartbeat_path = (
+                          Path(env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data"))
+                          / "runtime" / "control-plane" / "dispatch-sweep-heartbeat.json"
+                      )
+                      heartbeat_status = module.inspect_sweep_heartbeat(
+                          heartbeat_path, expected_pid=pid,
+                          process_started_epoch=started,
+                          interval_seconds=float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")),
+                      )
+                      observed.update(heartbeat_status)
+                  else:
+                      observed["sweep_heartbeat_reason"] = "installed_module_absent"
+              except (OSError, ValueError, TypeError, ImportError, AttributeError):
+                  observed["sweep_heartbeat_reason"] = "inspection_unavailable"
               # Constructor-loaded .env files may differ from /proc environ.
               # Runtime target registration and an active sweep thread must be
               # separately attested; don't turn booleans into false proof.
