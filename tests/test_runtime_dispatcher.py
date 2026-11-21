@@ -409,3 +409,45 @@ def test_real_sweep_loop_heartbeat_tracks_failure_then_recovery(tmp_path, monkey
         interval_seconds=0.01,
     )
     assert status["sweep_active_proven"]
+
+
+def test_sweep_heartbeat_fail_closed_on_per_task_dispatcher_error(tmp_path, monkeypatch):
+    """Returned per-task errors must not be masked by a successful outer sweep."""
+    import os
+    import time
+
+    from agent_core.dispatch_sweep_health import inspect_sweep_heartbeat
+
+    dispatcher = RuntimeDispatcher(DistributedControlPlane(tmp_path / "per-task.sqlite3"))
+    heartbeat = tmp_path / "heartbeat.json"
+    calls = []
+
+    def recoverable_task_errors(*, limit):
+        calls.append(limit)
+        if len(calls) == 1:
+            return [{"taskId": "synthetic", "status": "dispatcher_error"}]
+        return [{"taskId": "synthetic", "status": "no_target"}]
+
+    monkeypatch.setattr(dispatcher, "dispatch_pending", recoverable_task_errors)
+
+    class TwoCycles:
+        def is_set(self):
+            return len(calls) >= 2
+
+        def wait(self, interval):
+            saved = json.loads(heartbeat.read_text())
+            assert saved["healthy"] is (len(calls) == 2)
+
+    dispatcher.run_sweep_loop(
+        TwoCycles(), interval_seconds=0.01, limit=3,
+        heartbeat_path=str(heartbeat),
+    )
+    status = inspect_sweep_heartbeat(
+        heartbeat, expected_pid=os.getpid(),
+        process_started_epoch=time.time() - 10,
+        interval_seconds=0.01,
+    )
+    assert status["sweep_active_proven"]
+    # A live scan with no matching target is healthy as a scan but does not
+    # imply task delivery, Executor readiness, or completion.
+    assert calls == [3, 3]
