@@ -246,6 +246,13 @@ jobs:
                           interval_seconds=float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")),
                       )
                       observed.update(heartbeat_status)
+                      observed["sweep_active_proven"] = (
+                          observed["loaded_process_proven"]
+                          and observed["configured_interval_positive"]
+                          and heartbeat_status["sweep_active_proven"]
+                      )
+                      if not observed["sweep_active_proven"] and heartbeat_status["sweep_active_proven"]:
+                          observed["sweep_heartbeat_reason"] = "runtime_identity_unverified"
                   else:
                       observed["sweep_heartbeat_reason"] = "installed_module_absent"
               except (OSError, ValueError, TypeError, ImportError, AttributeError):
