@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import threading
 
 from agent_core.continuity_mirror import GitHubContinuityMirror, MirroringDispatchingGatewayService
@@ -205,6 +206,12 @@ def main() -> int:
     server = DistributedGatewayServer((args.host, args.port), service, token=token)
 
     stop_event = threading.Event()
+    # Non-authoritative telemetry for independent read-only Oracle audit.
+    # Do not publish an active heartbeat when no push target is configured.
+    heartbeat = str(
+        Path(os.environ.get("AGENT_DATA_ROOT") or (Path.home() / "agent-data"))
+        / "runtime" / "control-plane" / "dispatch-sweep-heartbeat.json"
+    )
     if dispatcher.targets and args.dispatch_interval_seconds > 0:
         sweep_thread = threading.Thread(
             target=dispatcher.run_sweep_loop,
@@ -212,6 +219,7 @@ def main() -> int:
             kwargs={
                 "interval_seconds": args.dispatch_interval_seconds,
                 "limit": args.dispatch_limit,
+                "heartbeat_path": heartbeat,
             },
             name="agentos-runtime-dispatcher",
             daemon=True,
