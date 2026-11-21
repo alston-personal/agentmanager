@@ -324,3 +324,88 @@ def test_failed_executor_does_not_stop_two_unaffected_task_receipts(tmp_path: Pa
     assert second_sweep[0]["status"] == "retry_wait"
     assert failed.calls == 1
     assert len(healthy.calls) == 2
+
+
+def test_sweep_heartbeat_is_live_pid_scoped_and_fail_closed(tmp_path):
+    import os
+    import time
+
+    from agent_core.dispatch_sweep_health import (
+        inspect_sweep_heartbeat, publish_sweep_heartbeat,
+    )
+
+    path = tmp_path / "dispatch-sweep-heartbeat.json"
+    now = time.time()
+    missing = inspect_sweep_heartbeat(
+        path, expected_pid=os.getpid(), process_started_epoch=now - 10,
+        interval_seconds=5, now_epoch=now,
+    )
+    assert not missing["sweep_active_proven"]
+
+    publish_sweep_heartbeat(path, healthy=True)
+    fresh = inspect_sweep_heartbeat(
+        path, expected_pid=os.getpid(), process_started_epoch=now - 10,
+        interval_seconds=5, now_epoch=time.time(),
+    )
+    assert fresh["sweep_active_proven"]
+    assert fresh["sweep_heartbeat_reason"] == "fresh_success"
+    assert (path.stat().st_mode & 0o777) == 0o600
+    assert not inspect_sweep_heartbeat(
+        path, expected_pid=os.getpid() + 1, process_started_epoch=now - 10,
+        interval_seconds=5, now_epoch=time.time(),
+    )["sweep_active_proven"]
+    assert not inspect_sweep_heartbeat(
+        path, expected_pid=os.getpid(), process_started_epoch=now + 10,
+        interval_seconds=5, now_epoch=time.time(),
+    )["sweep_active_proven"]
+    assert not inspect_sweep_heartbeat(
+        path, expected_pid=os.getpid(), process_started_epoch=now - 10,
+        interval_seconds=5, now_epoch=now + 500,
+    )["sweep_active_proven"]
+
+    publish_sweep_heartbeat(path, healthy=False)
+    assert inspect_sweep_heartbeat(
+        path, expected_pid=os.getpid(), process_started_epoch=now - 10,
+        interval_seconds=5, now_epoch=time.time(),
+    )["sweep_heartbeat_reason"] == "last_sweep_failed"
+
+
+def test_real_sweep_loop_heartbeat_tracks_failure_then_recovery(tmp_path, monkeypatch):
+    import os
+    import time
+
+    from agent_core.dispatch_sweep_health import inspect_sweep_heartbeat
+
+    dispatcher = RuntimeDispatcher(DistributedControlPlane(tmp_path / "health.sqlite3"))
+    heartbeat = tmp_path / "heartbeat.json"
+    recorded = []
+    calls = []
+
+    def flaky(*, limit):
+        calls.append(limit)
+        if len(calls) == 1:
+            raise RuntimeError("secret-never-in-telemetry")
+        return []
+
+    monkeypatch.setattr(dispatcher, "dispatch_pending", flaky)
+
+    class TwoCycles:
+        def is_set(self):
+            return len(calls) >= 2
+
+        def wait(self, interval):
+            recorded.append(heartbeat.read_text())
+
+    dispatcher.run_sweep_loop(
+        TwoCycles(), interval_seconds=0.01, limit=3,
+        heartbeat_path=str(heartbeat),
+    )
+    assert calls == [3, 3]
+    assert '"healthy":false' in recorded[0]
+    assert "secret-never-in-telemetry" not in recorded[0]
+    status = inspect_sweep_heartbeat(
+        heartbeat, expected_pid=os.getpid(),
+        process_started_epoch=time.time() - 10,
+        interval_seconds=0.01,
+    )
+    assert status["sweep_active_proven"]
