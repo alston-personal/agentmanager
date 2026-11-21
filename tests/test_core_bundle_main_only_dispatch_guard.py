@@ -29,3 +29,10 @@ def test_core_bundle_deployment_requires_explicit_exact_main():
     assert "github.ref_name == 'main'" in teams
     assert 'test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"' in teams
     assert "bash \"$DEPLOY\" \"$SHA\"" in teams
+    preflight = workflow.split("\n  teams-readonly-preflight:\n", 1)[1].split("\n  teams-immutable-cutover:\n", 1)[0]
+    assert "recognized_prior_owner" in preflight
+    assert "immutable_release" in preflight
+    assert "pid_cwd == workdir and installed_sha == release_sha" in preflight
+    assert 'owner_class = (' in preflight
+    assert "if not all(checks.values()):" in preflight
+
