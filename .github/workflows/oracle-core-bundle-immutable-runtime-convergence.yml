@@ -63,23 +63,46 @@ jobs:
             'python3 -' <<'PY'
           import json, re, subprocess
           from pathlib import Path
+
           def prop(key):
               return subprocess.check_output(
                   ["systemctl", "--user", "show", "teams-commander.service",
                    "-p", key, "--value"], text=True, timeout=5
               ).strip()
+
           unit = Path("/home/ubuntu/.config/systemd/user/teams-commander.service")
           source = unit.read_text(encoding="utf-8")
+          workdir = prop("WorkingDirectory")
+          pid = prop("MainPID")
+          mutable = "/home/ubuntu/agentmanager"
+          release_root = "/home/ubuntu/agent-data/releases/core/"
+          immutable_release = False
+          if re.fullmatch(r"[1-9][0-9]*", pid) and workdir.startswith(release_root):
+              release_sha = workdir[len(release_root):]
+              if re.fullmatch(r"[0-9a-f]{40}", release_sha):
+                  try:
+                      pid_cwd = str(Path("/proc", pid, "cwd").resolve(strict=True))
+                      installed_sha = subprocess.check_output(
+                          ["git", "-C", workdir, "rev-parse", "HEAD"],
+                          text=True, timeout=5,
+                      ).strip()
+                      immutable_release = (
+                          pid_cwd == workdir and installed_sha == release_sha
+                          and (Path(workdir) / "scripts/teams_bridge.py").is_file()
+                      )
+                  except (OSError, subprocess.SubprocessError):
+                      immutable_release = False
+          mutable_original = workdir == mutable
           checks = {
               "active": prop("ActiveState") == "active",
               "expected_unit_fragment": prop("FragmentPath") == str(unit),
               "unit_file_not_symlink": not unit.is_symlink(),
-              "unit_workdir_mutable": prop("WorkingDirectory") == "/home/ubuntu/agentmanager",
+              "recognized_prior_owner": mutable_original or immutable_release,
               "unit_text_exact_workdir": source.count(
-                  "WorkingDirectory=" + prop("WorkingDirectory")
+                  "WorkingDirectory=" + workdir
               ) == 1,
               "relative_teams_script_in_exec": bool(re.search(
-                  r"(?m)^ExecStart=/[^\s]+[\s]+scripts/teams_bridge\.py[\s]*$", source
+                  r"(?m)^ExecStart=/[^\\s]+[\\s]+scripts/teams_bridge\\.py[\\s]*$", source
               )),
               "environmentfile_present": any(
                   line.startswith("EnvironmentFile=")
@@ -87,8 +110,13 @@ jobs:
               ),
               "no_dropins": not prop("DropInPaths"),
           }
-          print(json.dumps({"schema": "agentos.teams-single-unit-preflight/v1",
-                            "checks": checks}, sort_keys=True))
+          owner_class = (
+              "legacy_mutable" if mutable_original
+              else "validated_immutable_release" if immutable_release
+              else "unrecognized"
+          )
+          print(json.dumps({"schema": "agentos.teams-single-unit-preflight/v2",
+                            "owner_class": owner_class, "checks": checks}, sort_keys=True))
           if not all(checks.values()):
               raise SystemExit(2)
           PY
