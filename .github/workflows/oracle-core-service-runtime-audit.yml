@@ -221,41 +221,49 @@ jobs:
               observed["configured_interval_positive"] = (
                   float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")) > 0
               )
-              # Heartbeat is emitted by the sweep itself, not inferred from
-              # PID/service liveness. Validate age, PID and process generation.
-              observed["sweep_heartbeat_reason"] = "not_attested"
+              # Inspect serialized heartbeat data independently: NEVER import
+              # or execute code from the installed runtime during a read-only audit.
+              observed["sweep_heartbeat_reason"] = "missing_or_unreadable"
               try:
-                  import importlib.util, time
-                  ticks = os.sysconf("SC_CLK_TCK")
+                  import json, time
                   stat_tail = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-                  started = time.time() - float(Path("/proc/uptime").read_text().split()[0]) + int(stat_tail[19]) / ticks
-                  module_path = cwd / "agent_core" / "dispatch_sweep_health.py"
-                  if module_path.is_file():
-                      spec = importlib.util.spec_from_file_location("installed_dispatch_sweep_health", module_path)
-                      if spec is None or spec.loader is None:
-                          raise ValueError("missing_module_loader")
-                      module = importlib.util.module_from_spec(spec)
-                      spec.loader.exec_module(module)
-                      heartbeat_path = (
-                          Path(env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data"))
-                          / "runtime" / "control-plane" / "dispatch-sweep-heartbeat.json"
-                      )
-                      heartbeat_status = module.inspect_sweep_heartbeat(
-                          heartbeat_path, expected_pid=pid,
-                          process_started_epoch=started,
-                          interval_seconds=float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")),
-                      )
-                      observed.update(heartbeat_status)
-                      observed["sweep_active_proven"] = (
-                          observed["loaded_process_proven"]
-                          and observed["configured_interval_positive"]
-                          and heartbeat_status["sweep_active_proven"]
-                      )
-                      if not observed["sweep_active_proven"] and heartbeat_status["sweep_active_proven"]:
-                          observed["sweep_heartbeat_reason"] = "runtime_identity_unverified"
+                  ticks = os.sysconf("SC_CLK_TCK")
+                  started = (
+                      time.time() - float(Path("/proc/uptime").read_text().split()[0])
+                      + int(stat_tail[19]) / ticks
+                  )
+                  interval = float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5"))
+                  heartbeat_path = (
+                      Path(env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data"))
+                      / "runtime" / "control-plane" / "dispatch-sweep-heartbeat.json"
+                  )
+                  if interval <= 0:
+                      observed["sweep_heartbeat_reason"] = "invalid_runtime_config"
+                  elif heartbeat_path.is_symlink() or not heartbeat_path.is_file():
+                      observed["sweep_heartbeat_reason"] = "missing_or_unreadable"
+                  elif heartbeat_path.stat().st_size > 2048:
+                      observed["sweep_heartbeat_reason"] = "oversized"
                   else:
-                      observed["sweep_heartbeat_reason"] = "installed_module_absent"
-              except (OSError, ValueError, TypeError, ImportError, AttributeError):
+                      record = json.loads(heartbeat_path.read_text(encoding="utf-8"))
+                      stamp = record.get("observed_at_epoch")
+                      age = time.time() - stamp if type(stamp) in (float, int) else None
+                      if record.get("schema") != "agentos.dispatch-sweep-heartbeat/v1":
+                          observed["sweep_heartbeat_reason"] = "unknown_schema"
+                      elif type(record.get("pid")) is not int or record["pid"] != pid:
+                          observed["sweep_heartbeat_reason"] = "pid_mismatch"
+                      elif age is None:
+                          observed["sweep_heartbeat_reason"] = "bad_timestamp"
+                      elif stamp < started - 1 or age < -2 or age > max(30.0, interval * 3):
+                          observed["sweep_heartbeat_reason"] = "stale_or_future"
+                      elif record.get("healthy") is not True:
+                          observed["sweep_heartbeat_reason"] = "last_sweep_failed"
+                      elif observed["loaded_process_proven"]:
+                          observed["sweep_active_proven"] = True
+                          observed["sweep_heartbeat_reason"] = "fresh_success"
+                      else:
+                          observed["sweep_heartbeat_reason"] = "runtime_identity_unverified"
+              except (OSError, ValueError, TypeError, AttributeError):
+                  observed["sweep_active_proven"] = False
                   observed["sweep_heartbeat_reason"] = "inspection_unavailable"
               # Constructor-loaded .env files may differ from /proc environ.
               # Runtime target registration and an active sweep thread must be
