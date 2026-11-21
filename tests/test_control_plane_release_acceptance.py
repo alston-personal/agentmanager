@@ -212,6 +212,12 @@ def test_oracle_readonly_control_plane_audit_parses_proc_nul_and_redacts_owners(
     assert '"nononline_pull_capability_registered": 0' in source
     assert '"no_nonline_pull_capability_registration": 0' in source
     assert 'observed["missing_push_pull_history"] = missing_push_pull_history' in source
+    assert 'observed["realm_node_registry_overlap"] = realm_overlap' in source
+    assert '"agentos.node-registry/v0.1"' in source
+    assert 'realm_registry.is_symlink()' in source
+    assert '"submitted_matching_realm_registration"' in source
+    assert '"submitted_without_realm_registration"' in source
+    assert 'registry.get("nodes")' in source
     assert 'service restart' not in source.split("  control-plane-readonly:", 1)[1].lower()
 
 
