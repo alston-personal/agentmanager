@@ -102,7 +102,7 @@ jobs:
                   "WorkingDirectory=" + workdir
               ) == 1,
               "relative_teams_script_in_exec": bool(re.search(
-                  r"(?m)^ExecStart=/[^\\s]+[\\s]+scripts/teams_bridge\\.py[\\s]*$", source
+                  r"(?m)^ExecStart=/[^\s]+[\s]+scripts/teams_bridge\.py[\s]*$", source
               )),
               "environmentfile_present": any(
                   line.startswith("EnvironmentFile=")
