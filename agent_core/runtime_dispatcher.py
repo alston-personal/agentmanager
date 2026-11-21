@@ -682,7 +682,14 @@ class RuntimeDispatcher:
         failure_reported = False
         while not stop_event.is_set():
             try:
-                self.dispatch_pending(limit=limit)
+                sweep_results = self.dispatch_pending(limit=limit)
+                # Per-task exceptions are returned as dispatcher_error rather
+                # than raised; they must not generate a success heartbeat.
+                if any(
+                    isinstance(item, dict) and item.get("status") == "dispatcher_error"
+                    for item in sweep_results
+                ):
+                    raise RuntimeError("dispatch_sweep_task_error")
             except Exception as exc:
                 # A transient SQLite lock or unavailable store must not kill
                 # the only recovery sweep thread. Never log error details,
