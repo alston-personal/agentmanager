@@ -204,6 +204,10 @@ def test_oracle_readonly_control_plane_audit_parses_proc_nul_and_redacts_owners(
     assert 'submitted_task_classes' in source
     assert 'submitted_inventory_reconciles' in source
     assert 'PRAGMA query_only=ON' in source
+    assert '"registered_but_disabled_push_capability": 0' in source
+    assert 'disabled_push_caps.update(names)' in source
+    assert 'elif capability in disabled_push_caps:' in source
+    assert 'missing_runtime_reasons[reason] += 1' in source
     assert 'service restart' not in source.split("  control-plane-readonly:", 1)[1].lower()
 
 
