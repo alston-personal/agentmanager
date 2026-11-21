@@ -274,3 +274,21 @@ def test_teams_rollback_is_armed_before_atomic_unit_replacement():
     assert 'teams_cutover_rollback=FAILED_TO_VERIFY_PREVIOUS_OWNER' in text
     assert '[ "$rollback_wd" = "$ORIGINAL_WD" ]' in text
     assert '[ "$rollback_cwd" = "$ORIGINAL_WD" ]' in text
+
+
+def test_readonly_sweep_audit_never_imports_installed_runtime_code():
+    from pathlib import Path
+
+    workflow = (
+        Path(__file__).resolve().parents[1] /
+        ".github/workflows/oracle-core-service-runtime-audit.yml"
+    ).read_text(encoding="utf-8")
+    audit = workflow.split("  control-plane-readonly:", 1)[1]
+    assert "dispatch-sweep-heartbeat.json" in audit
+    assert 'observed["sweep_active_proven"] = True' in audit
+    assert 'observed["loaded_process_proven"]' in audit
+    assert "spec_from_file_location" not in audit
+    assert "exec_module" not in audit
+    assert 'Path(f"/proc/{pid}/stat")' in audit
+    assert 'elif age is None:' in audit
+
