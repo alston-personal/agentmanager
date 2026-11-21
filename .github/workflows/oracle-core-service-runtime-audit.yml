@@ -351,17 +351,24 @@ jobs:
                       # Mirror the non-mutating *choice* criteria in the
                       # installed RuntimeDispatcher; do not wake any target.
                       online_caps = set()
+                      nononline_pull_caps = set()
                       if conn.execute(
                           "SELECT 1 FROM sqlite_master WHERE name='nodes'"
                       ).fetchone():
-                          for (manifest_raw,) in conn.execute(
-                              "SELECT manifest_json FROM nodes WHERE status='online'"
+                          for node_status, manifest_raw in conn.execute(
+                              "SELECT status, manifest_json FROM nodes"
                           ):
                               try:
                                   manifest = json.loads(manifest_raw)
-                                  for item in manifest.get("spec", {}).get("capabilities", []):
-                                      if isinstance(item, dict) and isinstance(item.get("name"), str):
-                                          online_caps.add(item["name"])
+                                  caps = {
+                                      item["name"]
+                                      for item in manifest.get("spec", {}).get("capabilities", [])
+                                      if isinstance(item, dict) and isinstance(item.get("name"), str)
+                                  }
+                                  if node_status == "online":
+                                      online_caps.update(caps)
+                                  else:
+                                      nononline_pull_caps.update(caps)
                               except (TypeError, ValueError, AttributeError):
                                   pass
                       push_target_caps = []
@@ -387,6 +394,10 @@ jobs:
                           "excluded_by_runtime_policy": 0,
                       }
                       submitted_capabilities = set()
+                      missing_push_pull_history = {
+                          "nononline_pull_capability_registered": 0,
+                          "no_nonline_pull_capability_registration": 0,
+                      }
                       dispatch_classes = {
                           "waiting_for_online_pull": 0,
                           "eligible_push_by_capability": 0,
@@ -441,10 +452,23 @@ jobs:
                                   else:
                                       reason = "no_registered_push_capability"
                                   missing_runtime_reasons[reason] += 1
+                                  # This is independent secondary evidence:
+                                  # a non-online Pull node MAY have registered
+                                  # the missing capability. It is NOT proof of
+                                  # an authorized or recoverable Executor owner.
+                                  if capability in nononline_pull_caps:
+                                      missing_push_pull_history[
+                                          "nononline_pull_capability_registered"
+                                      ] += 1
+                                  else:
+                                      missing_push_pull_history[
+                                          "no_nonline_pull_capability_registration"
+                                      ] += 1
                           except (ValueError, TypeError, AttributeError):
                               dispatch_classes["malformed_ir"] += 1
                       observed["submitted_distinct_capability_count"] = len(submitted_capabilities)
                       observed["missing_runtime_reasons"] = missing_runtime_reasons
+                      observed["missing_push_pull_history"] = missing_push_pull_history
                       observed["dispatch_choice_classes"] = dispatch_classes
                       observed["dispatch_choice_reconciles"] = (
                           sum(dispatch_classes.values()) == observed["submitted_count"]
