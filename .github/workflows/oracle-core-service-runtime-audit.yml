@@ -499,10 +499,17 @@ jobs:
                                           realm_caps.update(
                                               c for c in node["capabilities"] if isinstance(c, str)
                                           )
-                                  for (capability,) in conn.execute(
-                                      "SELECT capability FROM tasks WHERE status='submitted' "
-                                      "AND target_node_id IS NULL"
+                                  for capability, payload_raw in conn.execute(
+                                      "SELECT capability, payload_json FROM tasks "
+                                      "WHERE status='submitted' AND target_node_id IS NULL"
                                   ):
+                                      try:
+                                          payload = json.loads(payload_raw)
+                                      except (ValueError, TypeError):
+                                          continue
+                                      if (not isinstance(payload, dict)
+                                              or payload.get("protocol") != "agentos.distributed-task/v1"):
+                                          continue
                                       key = (
                                           "submitted_matching_realm_registration"
                                           if capability in realm_caps
