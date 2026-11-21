@@ -365,19 +365,25 @@ jobs:
                               except (TypeError, ValueError, AttributeError):
                                   pass
                       push_target_caps = []
+                      disabled_push_caps = set()
                       for target_name, kind, caps_raw, enabled in target_rows:
-                          if not enabled or kind not in ("github_actions", "webhook"):
+                          if kind not in ("github_actions", "webhook"):
                               continue
                           try:
                               caps = json.loads(caps_raw)
                               if isinstance(caps, list):
-                                  push_target_caps.append((target_name, kind, set(
-                                      c for c in caps if isinstance(c, str)
-                                  )))
+                                  names = {c for c in caps if isinstance(c, str)}
+                                  if enabled:
+                                      push_target_caps.append((target_name, kind, names))
+                                  else:
+                                      disabled_push_caps.update(names)
                           except (TypeError, ValueError):
                               pass
+                      # Only totals leave Oracle. Do not print capability labels,
+                      # task data, target IDs or names of disabled executors.
                       missing_runtime_reasons = {
                           "no_registered_push_capability": 0,
+                          "registered_but_disabled_push_capability": 0,
                           "excluded_by_runtime_policy": 0,
                       }
                       submitted_capabilities = set()
@@ -428,12 +434,12 @@ jobs:
                                   dispatch_classes["eligible_push_by_capability"] += 1
                               else:
                                   dispatch_classes["no_matching_runtime"] += 1
-                                  reason = (
-                                      "excluded_by_runtime_policy"
-                                      if any(capability in caps
-                                             for _, _, caps in push_target_caps)
-                                      else "no_registered_push_capability"
-                                  )
+                                  if any(capability in caps for _, _, caps in push_target_caps):
+                                      reason = "excluded_by_runtime_policy"
+                                  elif capability in disabled_push_caps:
+                                      reason = "registered_but_disabled_push_capability"
+                                  else:
+                                      reason = "no_registered_push_capability"
                                   missing_runtime_reasons[reason] += 1
                           except (ValueError, TypeError, AttributeError):
                               dispatch_classes["malformed_ir"] += 1
