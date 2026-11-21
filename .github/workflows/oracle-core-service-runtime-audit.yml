@@ -469,6 +469,50 @@ jobs:
                       observed["submitted_distinct_capability_count"] = len(submitted_capabilities)
                       observed["missing_runtime_reasons"] = missing_runtime_reasons
                       observed["missing_push_pull_history"] = missing_push_pull_history
+                      # Realm NodeRegistry is a *separate* existing source:
+                      # /agent-data/realm/nodes.json, not Control Plane SQLite.
+                      # Read it as bounded JSON data; never import installed
+                      # scripts and never export capability/node/task identities.
+                      realm_registry = Path(
+                          env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data")
+                      ) / "realm" / "nodes.json"
+                      realm_overlap = {
+                          "registry_state": "unavailable",
+                          "submitted_matching_realm_registration": 0,
+                          "submitted_without_realm_registration": 0,
+                      }
+                      try:
+                          if realm_registry.is_symlink() or not realm_registry.is_file():
+                              realm_overlap["registry_state"] = "missing_or_symlink"
+                          elif realm_registry.stat().st_size > 5 * 1024 * 1024:
+                              realm_overlap["registry_state"] = "oversized"
+                          else:
+                              registry = json.loads(realm_registry.read_text(encoding="utf-8"))
+                              if (not isinstance(registry, dict)
+                                      or registry.get("schema") != "agentos.node-registry/v0.1"
+                                      or not isinstance(registry.get("nodes"), dict)):
+                                  realm_overlap["registry_state"] = "invalid_schema"
+                              else:
+                                  realm_caps = set()
+                                  for node in registry["nodes"].values():
+                                      if isinstance(node, dict) and isinstance(node.get("capabilities"), list):
+                                          realm_caps.update(
+                                              c for c in node["capabilities"] if isinstance(c, str)
+                                          )
+                                  for (capability,) in conn.execute(
+                                      "SELECT capability FROM tasks WHERE status='submitted' "
+                                      "AND target_node_id IS NULL"
+                                  ):
+                                      key = (
+                                          "submitted_matching_realm_registration"
+                                          if capability in realm_caps
+                                          else "submitted_without_realm_registration"
+                                      )
+                                      realm_overlap[key] += 1
+                                  realm_overlap["registry_state"] = "read"
+                      except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
+                          realm_overlap["registry_state"] = "unreadable"
+                      observed["realm_node_registry_overlap"] = realm_overlap
                       observed["dispatch_choice_classes"] = dispatch_classes
                       observed["dispatch_choice_reconciles"] = (
                           sum(dispatch_classes.values()) == observed["submitted_count"]
