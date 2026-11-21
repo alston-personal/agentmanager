@@ -10,13 +10,14 @@ Scope: governed operations, NOT proof of authorization, merge, deployment, or ac
 - GitHub ruleset agentos (ID 21844290) currently matches only refs/heads/main, not core/integration.
 - Main-only draft PR #2366 will NOT disable the old branch workflow merely by merging to main.
 - A SECOND distinct workflow, .github/workflows/oracle-action-runtime-rollout.yml on main, declares push-to-core/integration and a workflow_dispatch. Its `rollout` job requires core/integration, then calls the existing agentos.runtime repair dispatch through Runner Window. This is a separate Action Runtime publication route; do not mistake a Core bundle-only fix for full single publisher proof.
+- A THIRD distinct legacy-branch workflow, .github/workflows/main-agent-model-routing-acceptance.yml, also has a core/integration push trigger and workflow_dispatch. Its accept job first calls agentos.runtime repair with GITHUB_SHA, and then runs executor job submission/inspection for model acceptance. It is not observational-only. This is a confirmed example, NOT an exhaustive inventory of all legacy workflows.
 - Existing .github/workflows/oracle-core-runtime-converge-now.yml is NOT a general recovery deploy: it only restarts os-chronos and agentos-core-supervisor from the current immutable Core release, without choosing/restoring another source or restoring Control Plane SQLite.
 
 - Workflow disable/enable is repository-workflow scoped rather than a safe branch-only off-switch; disabling an existing workflow can also disable its main ref entry point. Re-enabling it while the legacy branch still has its old YAML can re-expose the legacy event source.
 
 ## Operator preflight: do not mutate production until verified
 
-1. Inventory Oracle consumers and exact authorized Core/Action Runtime deploy/rollback/recovery workflows, including oracle-action-runtime-rollout.yml and any other core/integration-pinned push/dispatch route. Do not treat oracle-core-runtime-converge-now.yml as a source/DB recovery channel. Confirm a genuinely independent rescue and publish channel exists before removing any working entrypoint.
+1. Inventory Oracle consumers and exact authorized Core/Action Runtime deploy/rollback/recovery workflows, including oracle-action-runtime-rollout.yml, main-agent-model-routing-acceptance.yml and any other core/integration-pinned push/dispatch route. Do not treat oracle-core-runtime-converge-now.yml as a source/DB recovery channel. Confirm a genuinely independent rescue and publish channel exists before removing any working entrypoint.
 2. Identify the actual GitHub Workflow ID/path and its enabled state through GitHub Actions administration; capture timestamped, sanitized readback.
 3. Inventory in-progress or queued jobs with potential external side effects. Do not assume cancelling them rolls back a partially executed deploy.
 4. Define exact-source and SQLite/WAL-consistent rollback acceptance before any control-plane rollout.
