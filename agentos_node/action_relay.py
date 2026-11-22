@@ -144,29 +144,7 @@ def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
-    """Publish the canonical AgentOS Core continuation through one narrow action.
-
-    The relay accepts no arbitrary path or shell. Project identity, mutation
-    authority, schemas, index generation, and canonical target paths are all
-    revalidated by the publisher under the ubuntu execution identity.
-    """
-    from agent_core.project_continuation_index import publish_project_continuation
-    expected_keys = {"expected_index_id", "expected_ir_id"}
-    base_keys = {"project_id", "execution_head", "continuation"}
-    if not isinstance(params, dict) or not base_keys.issubset(params) or set(params) - (base_keys | expected_keys):
-        raise ValueError("publish_continuation accepts only canonical payload and optional CAS fence")
-    fence_keys = set(params) & expected_keys
-    if fence_keys and fence_keys != expected_keys:
-        raise ValueError("expected_index_id and expected_ir_id must be supplied together")
-    payload = {key: params[key] for key in base_keys}
-    if fence_keys:
-        if not all(isinstance(params[k], str) and params[k].strip() for k in expected_keys):
-            raise ValueError("CAS fence values must be non-empty strings")
-        return publish_project_continuation(payload, expected_index_id=params["expected_index_id"],
-                                            expected_ir_id=params["expected_ir_id"])
-    return publish_project_continuation(payload)
-
+# The canonical continuation publisher is defined once in the ACTIONS block below.
 
 def _register_agentos_core_project(params: dict[str, Any]) -> dict[str, Any]:
     """Register the canonical AgentOS Core project through the ubuntu authority boundary.
