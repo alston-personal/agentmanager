@@ -42,10 +42,32 @@ Companion source inventory: `docs/governance/1682-workflow-source-census-2026112
 - **23 / 617** selected higher-priority Workflow sources have undergone *limited static pattern scans*; **594 / 617** remain explicitly `unreviewed`.
 - Filename-only triage: 188 priority-1 candidates, 289 priority-2 candidates, 140 priority-3 candidates. These are **queue priorities**, not write-capability or active-state verdicts.
 - A limited static scan found explicit SSH/systemctl/sudo tokens in Core Bundle, Core deploy, invoice intake, employee recovery, and other paths. A zero-match file is **not** evidence of no effects: workflow steps may call external scripts/capabilities.
-- **Provider state blocker:** the connected GitHub fetch capability rejected the repository-wide Actions Workflow listing endpoint, so no exhaustive provider `active`/`disabled` classification or Workflow-ID mapping was obtained this round. The existing per-commit workflow-run reader supports observed executions, not a full provider census.
+- **Provider status evidence recovered via existing scanner:** the generic GitHub fetch endpoint refused the repository-wide Actions Workflow listing, but existing read-only `legacy-workflow-publisher-inventory.yml` CI queried provider state through its constrained GitHub Actions token. Provider flags still require independent branch/credential and Oracle readback verification.
 - **Oracle state blocker:** runtime-loaded unit, real principals, direct write privileges and rescue availability have not been read back from Oracle.
 
 Next G0 work must reconcile source paths **and** GitHub provider workflow identity, plus indirect effects through reusable Workflows, Action Relay jobs, remote scripts and other repositories. Source scanning alone cannot complete the active-publisher census.
+
+## Reused existing whole-tree and provider census (not a new scanner)
+
+Existing Draft PR #2366 contains a read-only complete Workflow scanner, a cross-branch comparator, provider-state reader, recent-run reader, tests and the `legacy-workflow-publisher-inventory.yml` CI. **Reuse these existing implementations**, rather than expanding the manually scanned 23-file sample or building a competing scanner.
+
+Successful [CI run 45000061954](https://github.com/alston-personal/agentmanager/actions/runs/45000061954) scanned pinned `main@77138a48` and `core/integration@8c49a4de`, and uploaded [full JSON evidence artifact](https://github.com/alston-personal/agentmanager/actions/runs/45000061954/artifacts/14745183548). Checked machine-readable summary: `docs/governance/1682-existing-publisher-ci-evidence-20261122.json`.
+
+| Static source evidence | Pinned main | Pinned core/integration |
+|---|---:|---:|
+| YAML files, including four nested historical paths | 617 | 453 |
+| Root Workflow paths | 613 | 449 |
+| Root `core/integration` Push candidates | 248 | 254 |
+| Root legacy Push + potential mutation signals | 119 | 122 |
+| All potential mutation-signal classifications | 267 | 215 |
+| Manual-review-required classification | 176 | 114 |
+| No mutation signal observed (NOT proven safe) | 174 | 124 |
+
+Provider reader observed **1,076 Workflow identity paths**, **122** legacy Push/mutation candidates flagged active, and **463** active provider identities outside the two pinned source trees. Those 463 are **not proven executable publishers**. Static branch comparison: 449 shared root paths, 49 changed source versions, 164 main-only paths, 10 divergent legacy mutating Push candidates. Previous quarantine list had 150 paths, and the scanner identified **119** potentially mutating legacy Push paths outside that list; this does not justify blindly disabling any workflow.
+
+The recent-run reader observed 1,502 run records, including 502 on legacy branch and 16 recent candidate legacy Push runs; **pagination was incomplete**. These values are observations, not an exhaustive run census.
+
+**Open G0 boundaries:** verify each provider ID's branch reachability, usable credentials and executor owner, investigate script/reusable-workflow/other-repository indirect mutation, verify Oracle installed runtime, privileged OS write boundaries and rescue permissions. The scanner is based on static source signals, not actual Oracle deploy success or proof of safety.
 
 ## Pre-existing capabilities to reuse
 
