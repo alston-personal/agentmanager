@@ -105,6 +105,17 @@ By contrast, 2026-11-22 PR-triggered [Run #44999152955](https://github.com/alsto
 
 **G0 remaining blocker:** no direct authoritative Oracle loaded-PID/version/perms readback for 2026-11-22, no proof that old SSH credentials still work or have been revoked, no verified ONE approval link. The historical successful write makes the potential bypass concrete, but does **not** prove an ongoing overwrite today or authorize switching off any workflow without rescue acceptance.
 
+## Oracle read-only inspection entrypoints: source-level classification
+
+The pinned main tree contains existing Oracle inspection flows; a new runtime inspector is not automatically necessary. Detailed candidate classification and disclaimers are in `docs/governance/1682-oracle-inspection-route-review-20261122.json`.
+
+- `oracle-core-service-runtime-audit.yml` includes a read-only SSH audit job that inspects `runtime/core/current`, systemd `MainPID`/`WorkingDirectory`/`ActiveState` and `/proc/PID/cwd`; it is a potential source for an **independently timestamped Oracle runtime readback** after its entire workflow is reviewed and executed under existing authorized governance.
+- `core-realm-fabric-live-fingerprint-20261012.yml` reads the Realm Fabric live process cwd, user systemd properties and current symlink.
+- `oracle-inspect-agentos-core-project-state.yml` reads project state on an Oracle self-hosted runner, **not** all loaded executable versions.
+- **Do not call** `oracle-diagnose-action-relay-runtime.yml` a safe read-only inspector: after its process diagnostics it runs `git fetch origin main`, `git reset --hard origin/main` and locally commits a diagnostic file. Its spool/capsule printing also requires a privacy/sanitization review. This is a source-level observation, not evidence a direct production push succeeded.
+
+The existing `agentos-core` MCP offers continuation/IR readings, not a dedicated Oracle loaded-PID and OS-write-permission attestation. No Workflow dispatch was executed during this G0 read-only audit. Runtime truth for **current** 2026-11-22 still needs an independently authorized Oracle readback; do not substitute historical successful deployments or source-only checks for that receipt.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
