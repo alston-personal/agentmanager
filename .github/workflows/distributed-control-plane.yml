@@ -14,11 +14,6 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # Keep hosted tests wholly outside Oracle's absolute production data paths.
-    # Both env names are used by existing Node and Governance registries.
-    env:
-      AGENT_DATA_ROOT: ${{ runner.temp }}/agent-data
-      AGENTOS_DATA_ROOT: ${{ runner.temp }}/agent-data
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +29,12 @@ jobs:
             rm -- CLAUDE.md
           fi
       - name: Initialize isolated hosted registry roots
-        run: mkdir -p "$AGENT_DATA_ROOT/governance" "$AGENT_DATA_ROOT/realm"
+        shell: bash
+        run: |
+          set -euo pipefail
+          data_root="$RUNNER_TEMP/agent-data"
+          mkdir -p "$data_root/governance" "$data_root/realm"
+          printf 'AGENT_DATA_ROOT=%s\nAGENTOS_DATA_ROOT=%s\n' "$data_root" "$data_root" >> "$GITHUB_ENV"
       - run: python -m pip install pytest pyyaml
       - run: >-
           python -m pytest -q --import-mode=importlib --rootdir=tests --ignore=CLAUDE.md
