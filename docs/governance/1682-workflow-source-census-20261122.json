@@ -1,11 +1,11 @@
 {
   "schema": "agentos.publisher-source-census/v0.1",
-  "status": "filename-inventory-only",
+  "status": "sampled-static-census",
   "repo": "alston-personal/agentmanager",
   "baseline_sha": "77138a48a2661cd4e46f15c605d1db010367bc1a",
   "total_yaml_workflow_files": 617,
-  "static_scanned": 0,
-  "unreviewed": 617,
+  "static_scanned": 12,
+  "unreviewed": 605,
   "disclaimer": "Every file is enumerated but not yet source-reviewed. Filename triage does not establish whether a workflow is active, write-capable, or safe. Provider and Oracle runtime evidence remain unknown.",
   "records": [
     {
@@ -463,10 +463,33 @@
       "blob_sha": "0789f0a97124897bb5aabacf4bd9c830b676f5e5",
       "bytes": 4677,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 1,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 5,
+          "text": "workflow_dispatch:"
+        },
+        {
+          "line": 6,
+          "text": "push:"
+        },
+        {
+          "line": 7,
+          "text": "branches: [core/integration]"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/core-oracle-external-network-probe-20261012.yml",
@@ -733,10 +756,74 @@
       "blob_sha": "0e58c7e80cdb090cc5cda89dc0c37aeb9a27294a",
       "bytes": 16699,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 4,
+        "systemctl_mentions": 7,
+        "ssh_mentions": 7,
+        "sudo_mentions": 0,
+        "git_write_candidates": 2,
+        "deploy_script_mentions": 3
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "push:"
+        },
+        {
+          "line": 5,
+          "text": "branches:"
+        },
+        {
+          "line": 18,
+          "text": "branches:"
+        },
+        {
+          "line": 22,
+          "text": "workflow_dispatch:"
+        }
+      ],
+      "key_effect_evidence": [
+        {
+          "line": 139,
+          "text": "uses: webfactory/ssh-agent@v0.9.0"
+        },
+        {
+          "line": 141,
+          "text": "ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}"
+        },
+        {
+          "line": 149,
+          "text": "ssh -o StrictHostKeyChecking=accept-new -p \"${DEPLOY_SSH_PORT:-22}\" \"${DEPLOY_USER}@${DEPLOY_HOST}\" \\"
+        },
+        {
+          "line": 161,
+          "text": "systemctl --user --version >/dev/null"
+        },
+        {
+          "line": 186,
+          "text": "ssh -o StrictHostKeyChecking=accept-new -p \"${DEPLOY_SSH_PORT:-22}\" \"${DEPLOY_USER}@${DEPLOY_HOST}\" \\"
+        },
+        {
+          "line": 202,
+          "text": "ssh -o StrictHostKeyChecking=accept-new -p \"${DEPLOY_SSH_PORT:-22}\" \"${DEPLOY_USER}@${DEPLOY_HOST}\" \\"
+        },
+        {
+          "line": 256,
+          "text": "git worktree add --detach \"$RELEASE\" \"$TARGET_SHA\""
+        },
+        {
+          "line": 292,
+          "text": "systemctl --user --no-pager --full status milkcat-credits.service || true"
+        },
+        {
+          "line": 297,
+          "text": "systemctl --user is-active --quiet agentos-control-plane.service"
+        }
+      ]
     },
     {
       "path": ".github/workflows/deploy-n8n-env.yml",
@@ -763,10 +850,33 @@
       "blob_sha": "7d7fce6c19a4ff3dae12efc67e531b901d73e35b",
       "bytes": 7758,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 0,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 5,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "workflow_dispatch:"
+        },
+        {
+          "line": 5,
+          "text": "push:"
+        },
+        {
+          "line": 6,
+          "text": "branches: [main]"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/diagnose-realm-controller-live.yml",
@@ -1393,10 +1503,33 @@
       "blob_sha": "e8c87fc9b4bb54a37b9096c0a7fde5a2a3f3c178",
       "bytes": 10482,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 0,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 5,
+          "text": "push:"
+        },
+        {
+          "line": 6,
+          "text": "branches: [main]"
+        },
+        {
+          "line": 17,
+          "text": "branches: [main]"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/main-agent-executor-health-acceptance.yml",
@@ -1413,10 +1546,33 @@
       "blob_sha": "6cbf779d0badffcdca155414f48c5904f1f7601c",
       "bytes": 12808,
       "triage": "priority-3",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 1,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "push:"
+        },
+        {
+          "line": 5,
+          "text": "branches: [core/integration]"
+        },
+        {
+          "line": 21,
+          "text": "workflow_dispatch:"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/main-agent-relay-recovery-acceptance.yml",
@@ -1853,10 +2009,33 @@
       "blob_sha": "a88f3eff17e6953e7edfb35c8c477a1de9b7dda3",
       "bytes": 6001,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 2,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "push:"
+        },
+        {
+          "line": 5,
+          "text": "branches:"
+        },
+        {
+          "line": 21,
+          "text": "workflow_dispatch:"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/oracle-agent-data-all-worktree-index-proof.yml",
@@ -2123,10 +2302,25 @@
       "blob_sha": "0deafca5b45cff912b9080200c4ecd2328bf7bc0",
       "bytes": 9096,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 0,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 1,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "workflow_dispatch:"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/oracle-bootstrap-milkcat-owner-admin.yml",
@@ -2283,10 +2477,33 @@
       "blob_sha": "48fcf489c4c66ec22c2e3424cca57f078cc03b3e",
       "bytes": 4839,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 2,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 0,
+        "sudo_mentions": 0,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 7,
+          "text": "workflow_dispatch:"
+        },
+        {
+          "line": 8,
+          "text": "push:"
+        },
+        {
+          "line": 9,
+          "text": "branches:"
+        }
+      ],
+      "key_effect_evidence": []
     },
     {
       "path": ".github/workflows/oracle-control-inbox-service-repair.yml",
@@ -2303,10 +2520,74 @@
       "blob_sha": "b9398ff67c63942c5efe74db3fee201352b7f138",
       "bytes": 42085,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 2,
+        "systemctl_mentions": 50,
+        "ssh_mentions": 9,
+        "sudo_mentions": 12,
+        "git_write_candidates": 1,
+        "deploy_script_mentions": 2
+      },
+      "trigger_evidence": [
+        {
+          "line": 10,
+          "text": "push:"
+        },
+        {
+          "line": 11,
+          "text": "branches: [core/integration]"
+        },
+        {
+          "line": 44,
+          "text": "workflow_dispatch:"
+        },
+        {
+          "line": 52,
+          "text": "branches: [main]"
+        }
+      ],
+      "key_effect_evidence": [
+        {
+          "line": 78,
+          "text": "- uses: webfactory/ssh-agent@v0.9.0"
+        },
+        {
+          "line": 80,
+          "text": "ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}"
+        },
+        {
+          "line": 85,
+          "text": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \\"
+        },
+        {
+          "line": 92,
+          "text": "[\"systemctl\", \"--user\", \"show\", \"teams-commander.service\","
+        },
+        {
+          "line": 133,
+          "text": "- uses: webfactory/ssh-agent@v0.9.0"
+        },
+        {
+          "line": 135,
+          "text": "ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}"
+        },
+        {
+          "line": 141,
+          "text": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \\"
+        },
+        {
+          "line": 171,
+          "text": "- uses: webfactory/ssh-agent@v0.9.0"
+        },
+        {
+          "line": 173,
+          "text": "ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}"
+        }
+      ]
     },
     {
       "path": ".github/workflows/oracle-core-generation5-resume-release.yml",
@@ -2343,10 +2624,42 @@
       "blob_sha": "a61fbf5d1f41034d74aa28e56de225ec90ba93ec",
       "bytes": 2298,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 0,
+        "systemctl_mentions": 4,
+        "ssh_mentions": 0,
+        "sudo_mentions": 4,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "workflow_dispatch:"
+        }
+      ],
+      "key_effect_evidence": [
+        {
+          "line": 31,
+          "text": "sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user restart os"
+        },
+        {
+          "line": 33,
+          "text": "sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user is-active "
+        },
+        {
+          "line": 35,
+          "text": "sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user is-active "
+        },
+        {
+          "line": 38,
+          "text": "pid=\"$(sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user show \"$unit\" -p MainPID --value)\""
+        }
+      ]
     },
     {
       "path": ".github/workflows/oracle-core-service-runtime-audit.yml",
@@ -2513,10 +2826,46 @@
       "blob_sha": "7386ad877a5b8f556b2619f04f101b63b9edbee0",
       "bytes": 16595,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 0,
+        "systemctl_mentions": 0,
+        "ssh_mentions": 2,
+        "sudo_mentions": 0,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "push:"
+        },
+        {
+          "line": 5,
+          "text": "branches:"
+        },
+        {
+          "line": 17,
+          "text": "branches:"
+        },
+        {
+          "line": 25,
+          "text": "workflow_dispatch:"
+        }
+      ],
+      "key_effect_evidence": [
+        {
+          "line": 184,
+          "text": "uses: webfactory/ssh-agent@v0.9.0"
+        },
+        {
+          "line": 186,
+          "text": "ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}"
+        }
+      ]
     },
     {
       "path": ".github/workflows/oracle-deploy-studio-web-mio.yml",
@@ -3143,10 +3492,66 @@
       "blob_sha": "b9a1b0a72f2f160f60a91eafd9d113be5b424685",
       "bytes": 8830,
       "triage": "priority-1",
-      "review": "unreviewed",
-      "effect": "unknown",
+      "review": "static-pattern-scanned",
+      "effect": "requires-manual-verification",
       "provider_active": "unknown",
-      "oracle_loaded": "unknown"
+      "oracle_loaded": "unknown",
+      "indicators": {
+        "integration_mentions": 1,
+        "systemctl_mentions": 6,
+        "ssh_mentions": 8,
+        "sudo_mentions": 5,
+        "git_write_candidates": 0,
+        "deploy_script_mentions": 0
+      },
+      "trigger_evidence": [
+        {
+          "line": 4,
+          "text": "push:"
+        },
+        {
+          "line": 5,
+          "text": "branches: [core/integration]"
+        }
+      ],
+      "key_effect_evidence": [
+        {
+          "line": 22,
+          "text": "uses: webfactory/ssh-agent@v0.9.0"
+        },
+        {
+          "line": 24,
+          "text": "ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}"
+        },
+        {
+          "line": 31,
+          "text": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p \"${DEPLOY_SSH_PORT:-22}\" \"${DEPLOY_USER}@${ORACLE_HOST}\" 'bash -s' <<'REMOTE'"
+        },
+        {
+          "line": 36,
+          "text": "mapfile -t UNITS < <(systemctl list-unit-files 'actions.runner.*.service' --no-legend 2>/dev/null | awk '{print $1}' | sed '/^$/d')"
+        },
+        {
+          "line": 39,
+          "text": "sudo -n systemctl enable --now \"$unit\""
+        },
+        {
+          "line": 40,
+          "text": "sudo -n systemctl is-active \"$unit\""
+        },
+        {
+          "line": 46,
+          "text": "sudo -n -u agentos-node bash -lc 'cd /home/agentos-node/runner && nohup ./run.sh > runner-recovery.log 2>&1 </dev/null &'"
+        },
+        {
+          "line": 54,
+          "text": "sudo -n journalctl -k -b -1 --no-pager 2>/dev/null | grep -Ei 'out of memory|oom|killed process' | tail -n 80 || true"
+        },
+        {
+          "line": 56,
+          "text": "sudo -n journalctl -b -1 -p warning..alert --no-pager 2>/dev/null | tail -n 120 || true"
+        }
+      ]
     },
     {
       "path": ".github/workflows/oracle-identity-boundary-audit.yml",
