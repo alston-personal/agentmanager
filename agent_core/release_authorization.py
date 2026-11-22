@@ -22,6 +22,14 @@ class Decision:
     allowed: bool
     reason: str
     release_epoch: int | None = None
+    # Bound metadata prevents a positive decision for one release from being
+    # accidentally re-used for a different target or artifact at claim time.
+    source_commit: str | None = None
+    artifact_digest: str | None = None
+    approval_receipt_id: str | None = None
+    repository: str | None = None
+    realm_id: str | None = None
+    environment: str | None = None
 
 
 def _utc(value: Any) -> datetime | None:
@@ -107,4 +115,10 @@ def verify_release_intent(
         return Decision(False, "target_environment_mismatch")
     if observed_target.get("realm_id") != request["realm_id"]:
         return Decision(False, "target_realm_mismatch")
-    return Decision(True, "preflight_eligible_requires_atomic_target_cas", epoch)
+    return Decision(
+        True, "preflight_eligible_requires_atomic_target_cas", epoch,
+        source_commit=sha, artifact_digest=digest,
+        approval_receipt_id=approved_intent["approval_receipt_id"],
+        repository=request["repository"], realm_id=request["realm_id"],
+        environment=request["environment"],
+    )
