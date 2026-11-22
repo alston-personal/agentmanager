@@ -127,7 +127,7 @@ class TargetReleaseEpochStore:
         if not decision.allowed or decision.release_epoch != new_epoch:
             raise ReleaseFenceError("unapproved_release_decision")
         if (type(expected_active_epoch) is not int or expected_active_epoch < 0
-                or type(new_epoch) is not int or new_epoch <= expected_active_epoch
+                or type(new_epoch) is not int or new_epoch < 1
                 or not isinstance(source_sha, str) or not SHA_RE.fullmatch(source_sha)
                 or not isinstance(approval_receipt_id, str) or not approval_receipt_id):
             raise ReleaseFenceError("invalid_claim")
@@ -139,10 +139,14 @@ class TargetReleaseEpochStore:
                 raise ReleaseFenceError("target_not_initialized")
             if current["pending_token"] is not None:
                 raise ReleaseFenceError("release_pending_requires_operator_recovery")
-            if current["active_epoch"] != expected_active_epoch:
-                raise ReleaseFenceError("active_generation_changed")
+            # A repeated epoch is a replay even after the prior claim
+            # committed; distinguish it from a malformed request.
             if new_epoch <= current["highest_claimed_epoch"]:
                 raise ReleaseFenceError("release_epoch_replayed")
+            if current["active_epoch"] != expected_active_epoch:
+                raise ReleaseFenceError("active_generation_changed")
+            if new_epoch <= expected_active_epoch:
+                raise ReleaseFenceError("invalid_claim")
             con.execute(
                 "UPDATE target_release_epoch SET highest_claimed_epoch=?, "
                 "pending_epoch=?,pending_sha=?,pending_token=?,pending_approval=? "
