@@ -17,6 +17,9 @@ OLD = "a" * 40
 NEW = "b" * 40
 OTHER = "c" * 40
 DIGEST = "sha256:" + "d" * 64
+PROJECT = "agentos-core"
+OPERATION = "runtime.converge"
+PRINCIPAL = "workflow-issuer:1234"
 
 
 def store(tmp_path):
@@ -31,11 +34,14 @@ def claim(state, *, new_epoch=8, expected_active_epoch=7, source_sha=NEW):
     return state.claim(
         **KEY, expected_active_epoch=expected_active_epoch, new_epoch=new_epoch,
         source_sha=source_sha, approval_receipt_id=f"receipt-{new_epoch}",
-        artifact_digest=DIGEST,
+        artifact_digest=DIGEST, project_id=PROJECT, operation=OPERATION,
+        authenticated_principal=PRINCIPAL,
         decision=Decision(
             True, "preflight_eligible_requires_atomic_target_cas", new_epoch,
             source_commit=source_sha, artifact_digest=DIGEST,
-            approval_receipt_id=f"receipt-{new_epoch}", **KEY,
+            approval_receipt_id=f"receipt-{new_epoch}",
+            project_id=PROJECT, operation=OPERATION,
+            authorized_principal=PRINCIPAL, **KEY,
         ),
     )
 
@@ -116,6 +122,8 @@ def test_unapproved_decision_or_target_change_cannot_claim(tmp_path):
         state.claim(
             **KEY, expected_active_epoch=7, new_epoch=8, source_sha=NEW,
             approval_receipt_id="fake", artifact_digest=DIGEST,
+            project_id=PROJECT, operation=OPERATION,
+            authenticated_principal=PRINCIPAL,
             decision=Decision(False, "non_main_source_forbidden"),
         )
     with pytest.raises(ReleaseFenceError, match="active_generation_changed"):
@@ -152,18 +160,24 @@ def test_valid_epoch_decision_cannot_be_reused_for_different_release(tmp_path):
     approved = Decision(
         True, "preflight_eligible_requires_atomic_target_cas", 8,
         source_commit=NEW, artifact_digest=DIGEST,
-        approval_receipt_id="receipt-8", **KEY,
+        approval_receipt_id="receipt-8", project_id=PROJECT,
+        operation=OPERATION, authorized_principal=PRINCIPAL, **KEY,
     )
     changed = (
         {"source_sha": OTHER},
         {"approval_receipt_id": "other-receipt"},
         {"artifact_digest": "sha256:" + "e" * 64},
         {"realm_id": "other-realm"},
+        {"project_id": "other-project"},
+        {"operation": "social.deploy"},
+        {"authenticated_principal": "untrusted-executor"},
     )
     for override in changed:
         args = dict(**KEY, expected_active_epoch=7, new_epoch=8,
                     source_sha=NEW, approval_receipt_id="receipt-8",
-                    artifact_digest=DIGEST, decision=approved)
+                    artifact_digest=DIGEST, project_id=PROJECT,
+                    operation=OPERATION, authenticated_principal=PRINCIPAL,
+                    decision=approved)
         args.update(override)
         with pytest.raises(ReleaseFenceError, match="release_decision_scope_mismatch"):
             state.claim(**args)
@@ -171,6 +185,7 @@ def test_valid_epoch_decision_cannot_be_reused_for_different_release(tmp_path):
     with pytest.raises(ReleaseFenceError, match="release_decision_scope_mismatch"):
         state.claim(**KEY, expected_active_epoch=7, new_epoch=8,
                     source_sha=NEW, approval_receipt_id="receipt-8",
-                    artifact_digest=DIGEST,
+                    artifact_digest=DIGEST, project_id=PROJECT,
+                    operation=OPERATION, authenticated_principal=PRINCIPAL,
                     decision=Decision(True, "preflight_eligible_requires_atomic_target_cas", 8))
     assert len(claim(state)) == 64
