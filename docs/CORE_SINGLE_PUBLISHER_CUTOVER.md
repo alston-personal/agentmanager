@@ -60,3 +60,15 @@ Source snapshots are pinned to `core/integration@8c49a4de94b2796b3b33bfa3abd9487
 **Classification caution:** `mutating_signal` means a static regex or local-reusable-workflow propagation flag (SSH, service operation, deployment-like script, etc.), *not* confirmed deployment. `no_mutating_signal_observed` likewise does not certify safety. Further investigate direct calls, actual job preconditions, provider Workflow enabled state, branch protection/bypass identities, and Oracle-loaded SHA before any removal or acceptance. The audit is repeatable, read-only, with no GitHub provider/ONE/Oracle mutation.
 
 **Operational implication:** the original 150-item quarantine list is not a complete authority registry. Do not assume that only three old publishers exist: the 122 flagged subset includes false positives, but 119 unlisted signals require owner review. Quarantine via provider-side admin controls and trusted main-only release authority must be designed system-wide, not file-by-file accidental fixes.
+
+
+## 2026-11-22 GitHub provider-level enabled-state readback
+
+A second strictly read-only GitHub-hosted census (Actions run [44969701146](https://github.com/alston-personal/agentmanager/actions/runs/44969701146)) used scoped `actions:read` access to enumerate actual GitHub Workflow IDs, paths, and `state`, then joined them against the pinned source inventories without executing any legacy Workflow.
+
+- GitHub Provider returns **1,076** distinct Workflow path identities, all with `state=active` in the fetched result.
+- **449/449** legacy root Workflow paths correspond to an `active` provider identity. The **122** static old-push/possible-side-effect candidates are therefore **122/122 provider-active**. This is enabled-state evidence, NOT proof an individual branch/job can execute or that it has changed Oracle.
+- Main currently contains **613** root source paths. **463** other provider-active paths appear in **neither** pinned `main` nor `core/integration` source snapshots. They may be historical identities or defined on other branches, and **cannot be automatically declared live publishers**. Nevertheless, they require provider lifecycle/branch-origin classification and eventual safe retirement; their registration state is not `disabled`.
+- Keep three inventories distinct: **(a) source YAML event path**, **(b) provider workflow active/disabled state**, **(c) authenticated Runtime ingress permission and successful production mutation**. They are NOT interchangeable.
+
+**Governance gap is broader than branch convergence:** preventing regressions requires a provider-level lifecycle registry for every Workflow ID, including previously removed-source identities, and a shared exact-main/Realm/release-generation fence at the trusted deployment ingress. Do not bulk-disable all 463 before owner/recovery inventory, and do not interpret all 1,076 as deployers. The audit did not change any workflow state.
