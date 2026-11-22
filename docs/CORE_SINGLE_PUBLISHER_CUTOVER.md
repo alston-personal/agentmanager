@@ -46,3 +46,17 @@ Scope: governed operations, NOT proof of authorization, merge, deployment, or ac
 ## Tooling boundary
 
 The present GitHub connection exposes read-only ruleset data but neither Workflow-disable nor ruleset-write actions. Administrative provider action and readback by an authorized operator is still required. Do not claim disabled state until verified.
+
+
+## 2026-11-22 complete read-only census (scope and coverage)
+
+Source snapshots are pinned to `core/integration@8c49a4de94b2796b3b33bfa3abd94874a97bd3fa` and `main@77138a48a2661cd4e46f15c605d1db010367bc1a`; see [GitHub Actions run 44969309463](https://github.com/alston-personal/agentmanager/actions/runs/44969309463). The source audit script scans every YAML and local reusable Workflow without executing legacy jobs. Detailed machine-readable inventories are attached as the run artifact.
+
+- Old: **453** YAML total = **449 executable-root paths** plus **4 nested `history/` reference files**. Of the 449 root workflows, **254** declare a `core/integration` push trigger. **122** of these were flagged for a static side-effect signal. Importantly, **66 of the 122** are flagged only because they use a remote Shell; such a signal alone does **not** prove mutation.
+- Main: **617** YAML total = **613 root paths** plus **4 nested history files**; **248** root workflows still describe a `core/integration` push trigger in their source. Those exact source triggers must be assessed at the legacy branch, not dismissed because they appear on main.
+- Cross-ref: every one of the old **449** root workflow paths also exists in main. **400** source-identical and **49** source-different; main has **164** root-only paths. Of the old 122 push+side-effect candidates, **10** differ on main and **112** retain identical source bytes across both branches.
+- Existing baseline `.agentos/governance/legacy-direct-oracle-workflows.txt`: **150** paths, all still present. Only **3 of 122** old push+side-effect candidates appear in that baseline, leaving **119 outside it**. Eight baseline paths retain an old push trigger. Baseline inclusion is not provider disabled-state proof.
+
+**Classification caution:** `mutating_signal` means a static regex or local-reusable-workflow propagation flag (SSH, service operation, deployment-like script, etc.), *not* confirmed deployment. `no_mutating_signal_observed` likewise does not certify safety. Further investigate direct calls, actual job preconditions, provider Workflow enabled state, branch protection/bypass identities, and Oracle-loaded SHA before any removal or acceptance. The audit is repeatable, read-only, with no GitHub provider/ONE/Oracle mutation.
+
+**Operational implication:** the original 150-item quarantine list is not a complete authority registry. Do not assume that only three old publishers exist: the 122 flagged subset includes false positives, but 119 unlisted signals require owner review. Quarantine via provider-side admin controls and trusted main-only release authority must be designed system-wide, not file-by-file accidental fixes.
