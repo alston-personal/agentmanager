@@ -1,7 +1,5 @@
 """Transactional generation claims with a persistent, fail-closed recovery fence."""
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-import sqlite3
 import threading
 
 import pytest
@@ -139,4 +137,5 @@ def test_missing_target_and_invalid_initial_readback_fail_closed(tmp_path):
     with pytest.raises(ReleaseFenceError, match="invalid_initial_verified_generation"):
         state.initialize_from_verified_readback(
             **KEY, installed_sha=OLD, installed_epoch=True)
-    assert state.inspect(**KEY) if False else True
+    with pytest.raises(ReleaseFenceError, match="target_not_initialized"):
+        state.inspect(**KEY)
