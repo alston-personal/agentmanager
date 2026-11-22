@@ -1,0 +1,64 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261122-SYSTEMIC-PREFLIGHT",
+  "goal": "使高風險工程變更在動手前具備可查核的盤點、風險與完整修復規劃",
+  "risk_tier": "high",
+  "phase": "design",
+  "status": "proposed",
+  "scope_inventory": [
+    "AGENTS.md 現有必讀順序與既有能力重用原則",
+    "agent_core/engineering_authority.py 的分支寫入權限",
+    "scripts/documentation_reality_guard.py 文件與程式一致性關卡",
+    ".github/workflows/engineering-authority.yml 既有 CI",
+    "docs/governance/decisions/GOV-2026-09-17-001-discovery-cost-reuse-floor.md 知識重用提案"
+  ],
+  "existing_capabilities": [
+    "沿用現有保護分支與獨立人工核准規則",
+    "沿用 GitHub Actions 與文件現實守衛",
+    "不建立第二套 ONE、Release Epoch 或 Executor 身分權威"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "ONE 與 Oracle：執行與正式部署權限",
+    "本 CI 前置守衛：僅驗證 PR 規劃證據是否存在且格式正確"
+  ],
+  "failure_modes": [
+    "自我聲明的 reviewed 欄位不能取代可信人工核准",
+    "歷史舊規劃不可拿來掩護不同 PR",
+    "未知發布入口與過期部署狀態不可由 CI PASS 推定安全",
+    "過度廣泛的風險分類可能阻塞低風險修正"
+  ],
+  "implementation_plan": [
+    "新增純驗證的風險分級前置守衛",
+    "在 PR CI 中用目前分支差異觸發檢查",
+    "提供同 PR 的規劃紀錄與單元測試",
+    "人工審查通過後才允許合併並開始正式適用"
+  ],
+  "verification_plan": [
+    "單元測試：高風險分類、資料缺失、未審查、未知權限、輕量變更",
+    "CI：只接受該 PR 中新增或更新的有效規劃紀錄",
+    "不把 CI 成功視為受控 Oracle 發布授權"
+  ],
+  "rollback_plan": [
+    "經保護分支人工審核後 revert 本 PR 的 CI 工作流程與守衛",
+    "回退不修改 ONE、Oracle、正式部署世代或執行者權限"
+  ],
+  "unknowns": [
+    "本規則還沒有經過獨立人工審查",
+    "不同 Repository 與 Runtime 尚未接入",
+    "尚需驗收大型歷史 PR 的遷移與緊急修復例外流程"
+  ],
+  "reviewers": [
+    "需獨立架構審查者",
+    "需獨立資安及可靠性審查者",
+    "受保護分支合併需另取得明確人工核准"
+  ],
+  "evidence_refs": [
+    "AGENTS.md",
+    "agent_core/engineering_authority.py",
+    "docs/governance/decisions/GOV-2026-09-17-001-discovery-cost-reuse-floor.md",
+    "docs/governance/decisions/GOV-2026-11-22-001-systemic-engineering-first.md"
+  ],
+  "ready_for_implementation": false,
+  "review_status": "pending"
+}
