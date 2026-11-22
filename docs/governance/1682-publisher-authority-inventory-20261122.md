@@ -95,6 +95,16 @@ A live `agentos_project_state("agentos-core")` query at this checkpoint returned
 
 The connected AgentOS MCP methods available in this chat (`agentos_project_state`, `agentos_resume`, `agentos_task`, `agentos_advance_ir`) **do not provide a dedicated, authenticated Oracle systemd/current-release/permission inspection method**. Therefore G0 Oracle runtime/PID/OS write boundary and recovery evidence remains **UNVERIFIED**. Existing Oracle inspection through an independently authorized runtime provider or known read-only Workflow is required. Do not use `agentos_advance_ir` to repurpose an unrelated active selector merely to record a source audit.
 
+## Historical Oracle effect confirmed, distinct from current loaded state
+
+Existing Core Bundle Workflow `converge` runs on `core/integration` Push and on eligible manual dispatch. Pinned `main` workflow at lines 162–190 accepts `github.sha` as the remote `SOURCE_COMMIT`, via SSH using deployment secrets, before Worktree/installer/systemd mutations. Its `publish-convergence-receipt` job sets `oracle_runtime_verified=true` from `needs.converge.result == success`; the field is **not** independently backed by a separate live-version query at receipt publishing time.
+
+Read back **historical [2026-11-09 Run #42576789610](https://github.com/alston-personal/agentmanager/actions/runs/42576789610), converge Job #129026198176: SUCCESS**. Its actual Job log records `Preparing worktree (detached HEAD f9d6c93d)`, `core_bundle_install_services=DONE`, `core_bundle_lobster_restart=DONE`, service runtime immutable path checks and `core_bundle_immutable_runtime=PASS`, for SHA `f9d6c93d004e8adb712953be46a10eb36dabb393`. This verifies **historical remote install/service changes and within-run runtime check**, stronger than a static candidate. Record: `docs/governance/1682-historical-oracle-core-bundle-effect-20261122.json`.
+
+By contrast, 2026-11-22 PR-triggered [Run #44999152955](https://github.com/alston-personal/agentmanager/actions/runs/44999152955) reported `converge=skipped`, with only the read-only preflight passing. A published GitHub receipt for this run has `oracle_runtime_verified=false`. A PR CI PASS therefore must not be counted as a deployment.
+
+**G0 remaining blocker:** no direct authoritative Oracle loaded-PID/version/perms readback for 2026-11-22, no proof that old SSH credentials still work or have been revoked, no verified ONE approval link. The historical successful write makes the potential bypass concrete, but does **not** prove an ongoing overwrite today or authorize switching off any workflow without rescue acceptance.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
