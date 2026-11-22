@@ -129,6 +129,26 @@ Read-only comparison of accepted prior Oracle evidence and subsequent actual job
 
 Evidence matrix: `docs/governance/1682-oracle-runtime-temporal-reconciliation-20261122.json`. Current full-Core runtime and audit-principal privileges remain **UNKNOWN**.
 
+## G1 preliminary writer authority matrix (G0 is still open)
+
+A machine-readable **source-to-identity-to-side-effect boundary** matrix is now in `docs/governance/1682-writer-authority-matrix-20261122.json`. It reuses the existing Realm deployment lease authority and inventories independent writers; it does **not** propose a new release store or grant publication permission.
+
+| Writer/inspector | Identity boundary | Mutated or inspected target | Gap |
+|---|---|---|---|
+| Legacy Core Bundle `converge` | Hosted GitHub Actions SSH deploy secret/user | Core Worktrees, systemd, current symlink | Historical mutation proven; present approval and target fencing unverified |
+| Core runtime SSH audit | **Same SSH secret/user expression** as deployment job | Core version, service cwd/PID (read-only commands) | Same expression is not evidence of a distinct read-only principal; actual credential and sudo scope unverified |
+| Manual safe Chronos rescue | SSH as `ubuntu` enforced in preflight | Action Relay/Chronos owner-managed repair | Preserve independent rescue; live fallback and permission acceptance pending |
+| Realm Fabric Action Relay | Unix owner/group capsule; caller-supplied lease label | Realm-specific release, existing `core-deployment.json` | Lock/CAS exists; mandatory authenticated ONE intent and loaded-version coverage unverified |
+| Runtime Converge Action Relay | Oracle ubuntu execution | Git checkout/runtime effects | Distinct write path; not proven fenced by Realm generation |
+| Oracle self-hosted permission audit | Self-hosted runner identity | Governance Directory metadata | Read-only commands, but runner effective write privileges unknown |
+| Action Relay diagnostics | Self-hosted runner | Git checkout and diagnostic file | Contains `git reset --hard` / `git commit`; **not** a safe read-only inspection carrier |
+
+The existing [`oracle-attest-governance-permissions.yml`](https://github.com/alston-personal/agentmanager/blob/main/.github/workflows/oracle-attest-governance-permissions.yml) reads **Governance Directory path ACL**, not the whole production release, systemd and SSH principal permission envelope. It cannot close the publisher authorization gate on its own.
+
+**Credential inference limitation:** audit and deployment share the *same source-level fallback names*, but the effective secret value, exact SSH login privileges, forced commands and `sudo` policy are not observed. Do not claim identical effective privileges, privilege abuse, or current writer ability until sanitized owner-authenticated readback.
+
+**G1 entry rule:** map every mutating ingress to one trustworthy exact-operation ONE approval and target-side CAS/fencing boundary, then independently test old Client/GitHub/Runner bypass attempts. Await G0 provider and Oracle reconciliation before promoting this preliminary matrix to an accepted integrated design.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
