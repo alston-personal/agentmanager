@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/legacy-workflow-publisher-inventory.yml'
       - 'scripts/audit_legacy_workflow_publishers.py'
+      - 'scripts/compare_workflow_publisher_inventory.py'
       - 'tests/test_audit_legacy_workflow_publishers.py'
   workflow_dispatch:
 
@@ -52,11 +53,51 @@ jobs:
               print("- " + k + ": " + str(d[k]))
           print("- Full per-path classification is in the attached JSON artifact.")
           PY
+      - name: Fetch protected main workflow source as data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          test "${#main_sha}" = 40
+          printf 'main_source_sha=%s\n' "$main_sha"
+          mkdir -p "$RUNNER_TEMP/main-workflow-snapshot"
+          git archive refs/remotes/origin/main .github/workflows \
+            | tar -xf - -C "$RUNNER_TEMP/main-workflow-snapshot"
+      - name: Scan all main workflows and compare both branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_legacy_workflow_publishers.py \
+            --root "$RUNNER_TEMP/main-workflow-snapshot" \
+            --output "$RUNNER_TEMP/main-workflow-census.json" \
+            --expected-count 617
+          python scripts/compare_workflow_publisher_inventory.py \
+            --legacy "$RUNNER_TEMP/legacy-workflow-census.json" \
+            --main "$RUNNER_TEMP/main-workflow-census.json" \
+            --output "$RUNNER_TEMP/cross-branch-workflow-compare.json"
+          python - "$RUNNER_TEMP/cross-branch-workflow-compare.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("## Main vs core/integration source comparison")
+          for key in ("legacy_root_workflows", "main_root_workflows", "common_paths",
+                      "identical_path_source", "different_source_count"):
+              print("- " + key + ": " + str(d[key]))
+          for key in ("legacy_mutating_push_candidates",
+                      "legacy_mutating_push_missing_from_main",
+                      "legacy_mutating_push_diverged_on_main",
+                      "main_manual_mutating_candidates"):
+              print("- " + key + ": " + str(len(d[key])))
+          print("Source signals only, no production mutation or provider state.")
+          PY
       - name: Upload non-secret static inventory artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: legacy-workflow-publisher-inventory
-          path: ${{ runner.temp }}/legacy-workflow-census.json
+          path: |
+            ${{ runner.temp }}/legacy-workflow-census.json
+            ${{ runner.temp }}/main-workflow-census.json
+            ${{ runner.temp }}/cross-branch-workflow-compare.json
           retention-days: 7
           if-no-files-found: warn
