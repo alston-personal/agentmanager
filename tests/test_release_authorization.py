@@ -17,6 +17,7 @@ def scenario():
         "project_id": "agentos-core", "realm_id": "realm-production",
         "environment": "oracle-production", "operation": "runtime.converge",
         "authenticated_principal": "workflow-issuer:1234", "release_epoch": 8,
+        "artifact_digest": DIGEST, "approval_receipt_id": "approved-human-8",
     }
     intent = {
         "schema": "agentos.approved-release-intent/v1", "state": "approved",
@@ -51,6 +52,8 @@ def test_only_matching_trusted_approval_and_newer_epoch_are_eligible():
     (("intent", "source_ref", "core/integration"), "non_main_intent_forbidden"),
     (("intent", "state", "draft"), "release_not_approved"),
     (("intent", "artifact_digest", ""), "missing_immutable_artifact_digest"),
+    (("request", "artifact_digest", "sha256:" + "c" * 64), "artifact_digest_not_approved"),
+    (("request", "approval_receipt_id", "forged-receipt"), "approval_receipt_mismatch"),
     (("intent", "approval_receipt_id", ""), "missing_approval_receipt"),
     (("request", "realm_id", "other-realm"), "scope_mismatch_realm_id"),
     (("request", "operation", "social.deploy"), "scope_mismatch_operation"),
@@ -96,3 +99,18 @@ def test_caller_claim_cannot_substitute_for_verified_identity():
         authenticated_principal="untrusted-old-executor", now=NOW)
     assert result.allowed is False
     assert result.reason == "principal_not_authorized"
+
+
+def test_artifact_and_receipt_are_mandatory_even_with_matching_main_sha():
+    request, approved, target = scenario()
+    for missing_field, reason in (
+        ("artifact_digest", "artifact_digest_not_approved"),
+        ("approval_receipt_id", "approval_receipt_mismatch"),
+    ):
+        stripped = {k: v for k, v in request.items() if k != missing_field}
+        result = verify_release_intent(
+            request=stripped, approved_intent=approved, observed_target=target,
+            authenticated_principal="workflow-issuer:1234", now=NOW,
+        )
+        assert result.allowed is False
+        assert result.reason == reason
