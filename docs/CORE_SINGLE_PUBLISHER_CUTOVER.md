@@ -128,3 +128,5 @@ The acceptance sequence is: confirm authoritative data contract / read-only adap
 ### PR metadata check / event-snapshot caution
 
 The existing `AgentOS IP Provenance Guard` reads the PR body from its GitHub Actions event snapshot. Re-running a failed job from an older event does not necessarily refresh that original snapshot after PR metadata is edited. The PR now has the required standalone `IP-Scope: personal-independent` line; a **new PR commit event** is necessary to validate the corrected metadata with a fresh event. Never suppress the guard or silently interpret the stale re-run as a current policy failure.
+
+**2026-11-22 follow-up trust-boundary hardening:** The pure evaluator now accepts `authenticated_principal` as a **separate argument** provided by a future trusted OIDC/Runtime identity adapter. The request's claimed principal cannot substitute; a mismatch is rejected. This is validated by a new negative test. As with authority and target epoch, caller identity MUST NOT be taken from user-submitted JSON. This is still not an enforcement integration.
