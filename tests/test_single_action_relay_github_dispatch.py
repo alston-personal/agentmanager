@@ -17,6 +17,17 @@ def test_only_one_github_dispatcher_definition_is_executable():
     assert action_relay.ACTIONS["github.actions.workflow.dispatch"] is action_relay._github_actions_dispatch
 
 
+def test_no_shadowed_top_level_action_relay_handlers_remain():
+    source = Path(action_relay.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    names = [
+        node.name for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    assert duplicates == [], "Action Relay function redefinition shadows safety checks: " + repr(duplicates)
+
+
 def test_effective_dispatcher_has_exact_main_sha_and_teams_only_guard():
     import inspect
     source = inspect.getsource(action_relay._github_actions_dispatch)
