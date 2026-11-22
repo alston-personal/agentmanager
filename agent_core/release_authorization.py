@@ -76,6 +76,12 @@ def verify_release_intent(
     digest = approved_intent.get("artifact_digest")
     if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         return Decision(False, "missing_immutable_artifact_digest")
+    # The immutable artifact must be the one the trusted authority approved.
+    # An approved source SHA alone cannot authorize deploying different bytes.
+    if request.get("artifact_digest") != digest:
+        return Decision(False, "artifact_digest_not_approved")
+    if request.get("approval_receipt_id") != approved_intent.get("approval_receipt_id"):
+        return Decision(False, "approval_receipt_mismatch")
     if not isinstance(approved_intent.get("approval_receipt_id"), str) or not approved_intent["approval_receipt_id"]:
         return Decision(False, "missing_approval_receipt")
     if not isinstance(approved_intent.get("authorized_principal"), str) or not approved_intent["authorized_principal"]:
