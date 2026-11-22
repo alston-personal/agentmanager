@@ -4,6 +4,7 @@ from scripts.check_branch_convergence_paths import classify, audit
 class BranchConvergencePathRiskTest(unittest.TestCase):
     def test_core_requires_review(self):
         self.assertEqual(classify(".agent/CONSTITUTION.yaml"), "RED")
+        self.assertEqual(classify("AGENTS.md"), "RED")
         self.assertEqual(classify(".github/workflows/deploy.yml"), "RED")
         self.assertEqual(classify("scripts/deploy_core.sh"), "RED")
         self.assertEqual(classify("runtime_core/canonical_ir.py"), "RED")
