@@ -1,0 +1,85 @@
+# #1682 Production Publisher & Authority Inventory — baseline v0
+
+Status: INCOMPLETE / READ-ONLY SOURCE INVENTORY
+Date: 2026-11-22 (Asia/Taipei)
+Owner: AgentOS #1682, pending independent architecture/security/reliability review
+Pinned baseline: `alston-personal/agentmanager main@77138a48a2661cd4e46f15c605d1db010367bc1a`
+
+This is a pre-implementation inventory, **not** a rollout authorization, an exhaustive publisher census, or a verified Oracle runtime receipt. PR #2366 and #2367 are separate unmerged Draft candidates and their changes must not be presented as currently active main code.
+
+## Goal and invariant
+
+Before any further production release mutation, enumerate and reconcile all paths capable of changing runtime state, the approval authority that grants each operation, the exact executor identity, the mutable target, the CAS/fencing state and the independent rollback/rescue path. ONE must remain the canonical authorization/continuation authority; an individual Workflow or Executor must not independently grant production publication rights. Existing, verified safety mechanisms should be reused rather than duplicated.
+
+## Known source-level paths and authority boundaries
+
+| Source path (main) | Observed trigger/operation | Authority/generation status | Evidence level | Unresolved |
+|---|---|---|---|---|
+| `.github/workflows/deploy-agentos-core.yml` | `main` push and manual `workflow_dispatch` with `deploy_ref`; remote SSH; Git worktree, service installer, systemd, symlink | Contains a local rollback trap but still exposes a generalized deployment entry; not proven to use ONE release intent or shared cross-writer fencing | Source verified | Resolve manual ref validation, expected SHA, actor, target write permissions, rollback health |
+| `.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml` | `core/integration` push/manual paths; remote SSH, Git worktree and systemd changes | Direct external mutation path; main copy not yet changed to #2366 proposal | Source verified | Legacy branch workflow identity and trigger, provider-level disable/quarantine, all modified services |
+| `.github/workflows/oracle-action-runtime-rollout.yml` | `core/integration` push/manual; runtime rollout | No shared, proven ONE approval + target writer fence | Source verified (trigger) | Actual shell mutation/installer consumers, source on legacy branch |
+| `.github/workflows/main-agent-model-routing-acceptance.yml` | `core/integration` push/manual | Acceptance Workflow can be a publication carrier; classify whether it writes | Source verified (trigger) | Exact side effects and operator identity |
+| `.github/workflows/deploy-realm-fabric-fenced.yml` | main push/manual; Action Relay install_release | Calls existing Realm deployment action, but original source includes a literal pinned commit | Source verified | Current exact desired generation claim provenance and active deployment |
+| `agentos_node/action_relay.py` | Registered `agentos.realm-fabric.claim_deployment`, `advance_deployment`, `renew_deployment`, `release_deployment`, `install_release` | Existing `core-deployment.json` plus `core-deployment.lock`, generation/lease/install checks (see `docs/CORE_DEPLOYMENT_AUTHORITY.md`) | Source verified | Caller-supplied lease_owner is not authenticated ONE approval; actual loaded relay version; OS privilege containment |
+| `agent_core/runtime_converge_contract.py` | `node.runtime.converge` source allowlist | Pinned `ALLOWED_SOURCE_REFS = {"core/integration"}` at baseline | Source verified | Migration to main-only without breaking older Client/Runner rollout |
+| `agentos_node/runtime_converge_action_relay.py` | Direct fetch/checkout/runtime converge | Separate side-effect writer, not covered by Realm-only lock by assumption | Source verified | Privileged ingress ownership, scope, independent fencing and rollback |
+| `agentos_node/bootstrap_control.py` | Installer/bootstrap script execution | Script fetch and execution can be an effect boundary | Prior source audit; re-read required | Exact entry routing, credentials and allowed operations |
+
+The table deliberately distinguishes **observed source** from **live producer**, and a lock protecting Realm Fabric from a lock protecting every service.
+
+## Census / scope accounting
+
+- A fresh Git tree read of the pinned `main` returned **3,168 paths**, not truncated.
+- The same tree contained **617 `.github/workflows/*.yml` files** (file inventory, not claim of active or write-capable Workflows).
+- Previous #2366 review evidence reported, for an explicitly different pinned legacy-branch snapshot, **449 executable legacy Workflow roots**, **254** with integration Push and **122** with static potential side-effect patterns. These figures are **prior evidence requiring regeneration**, not present-day verified state or proof that all are active.
+- Any Workflow not yet classified is **UNKNOWN**, never implicitly SAFE; build a complete provider-ID/workflow-path/branch/trigger/action/capability/credential matrix, with provider status and effective target identity.
+
+## Pre-existing capabilities to reuse
+
+- Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
+- Protected-branch authority: `AGENTS.md`, `scripts/protected_branch_authority.py`.
+- Existing engineering authority and documentation-reality gates, not a new scheduler/state machine.
+- Governance proposal PR #2367 (separate, Draft): inventory-first PR CI admission; no authorization power.
+- PR #2366 (separate, Draft): release-intent preflight, SQLite generation prototype and main-only Workflow proposals; **must not install SQLite as a second independent authority** without a single-state design and verified migration.
+
+## Authority model to resolve before implementation
+
+1. **Approval:** locate and verify a genuinely authenticated ONE publication-approval record, including exact project, Realm, environment, operation, principal, immutable artifact, source SHA, expiry and human approval Receipt.
+2. **Identity:** establish which caller identities are allowed to request versus execute; a caller-supplied `lease_owner` or `Decision` object is not proof.
+3. **Admission:** classify each entry (including recovery, SSH, Workflow dispatch, Action Relay, direct systemd/Git/file writers) and route production effect through one privileged target enforcement boundary.
+4. **Concurrency:** reconcile Realm Fabric existing generation and other services' generations, stale-client support and pending CAS; do not introduce multiple independently writable release heads.
+5. **Physical isolation:** test OS file, systemd, sudo, SSH, Worktree, GitHub provider permissions; a rejected controller request is not safety if the same executor can write directly.
+6. **Rollback:** verify backups/restore of immutable Worktree, service units, state/SQLite/WAL if used, capability markers, symlinks and live PID/health; rescue channel alternation must be proven, not assumed.
+7. **Publication lifecycle:** identify GitHub workflow identities on legacy `core/integration`, preserve at least one verified rescue path, perform controlled quarantine only after separately authorized operator approval.
+
+## Open risks / mandatory negative tests
+
+- Same-owner lease replay, released or expired lease reuse, stale receipt replay.
+- Valid SHA with mismatched artifact digest, approval receipt, Realm, operation or principal.
+- Two Executors competing for same target, plus an old executable ignoring the new gate.
+- DB commit successful but notification lost; process dies after Worktree/systemd mutation.
+- Version drift between running Oracle process, installed files and claimed Git main.
+- Recovery update simultaneously disables normal and rescue transports.
+- GitHub Workflow disabled at provider scope while rescue flow still depends on it.
+- Direct `core/integration` push triggers old Workflow while main-only patch passes CI.
+
+## Required evidence and acceptance gates
+
+| Gate | Exit criterion | Status |
+|---|---|---|
+| G0 Scope census | Full executable workflow identity + target mutation inventory with coverage counts | OPEN |
+| G1 Authority graph | ONE approval issuer/reader, identities, single writer and State ownership documented and independently reviewed | OPEN |
+| G2 Design | Reuse/retire matrix, migration order, client compatibility and failure injection design reviewed | OPEN |
+| G3 Implementation | Controlled code PRs based on latest protected main and no independent duplicate authority | BLOCKED until G0–G2 |
+| G4 Offline tests | Adversarial replay/concurrency/rollback and bypass negatives PASS | NOT STARTED for unified design |
+| G5 Oracle acceptance | Read back exact loaded PID, unit, target version, rollout and rollback/rescue Receipts | NOT STARTED |
+| G6 Legacy quarantine | Provider-side branch/Workflow quarantine with independent operator Receipt, no loss of rescue | NOT STARTED |
+
+## Immediate continuation
+
+1. Expand this table with **every active / retired / historical workflow identity** and all actual mutation operations; attribute each to an exact service/root and operator permission.
+2. Read actual Oracle installed Action Relay version and governance state through the existing authorized inspection route, without changing live state.
+3. Review architecture, security and reliability model together, then create **one** bounded implementation plan; decompose PR #2366 only after this inventory is reconciled.
+4. Do not merge or deploy #2366 on the basis of an isolated green CI, and do not push to or disable the old branch before safe rescue/authorization proofs.
+
+Unknown does not mean failure, but unknown must block a claim of production safety.
