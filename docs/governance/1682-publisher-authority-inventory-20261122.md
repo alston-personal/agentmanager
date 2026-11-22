@@ -69,6 +69,26 @@ The recent-run reader observed 1,502 run records, including 502 on legacy branch
 
 **Open G0 boundaries:** verify each provider ID's branch reachability, usable credentials and executor owner, investigate script/reusable-workflow/other-repository indirect mutation, verify Oracle installed runtime, privileged OS write boundaries and rescue permissions. The scanner is based on static source signals, not actual Oracle deploy success or proof of safety.
 
+## Provider identity triage with direct artifact readback
+
+The full [read-only Workflow artifact](https://github.com/alston-personal/agentmanager/actions/runs/45000061954/artifacts/14745183548) was retrieved and inspected, not just its CI log summary. Its `workflow-recent-run-triage.json` identifies **16 distinct provider Workflow IDs** with sampled `core/integration` Push runs and source-level potential mutation signals. The combined observations total **70 Push runs**, of which **25** belong to **`oracle-core-bundle-immutable-runtime-convergence.yml` (Workflow ID `375122039`, last observed 2026-11-22 07:50:42 UTC)**. These are Actions run observations, **not 70 verified Oracle writes**. Exact 16 Workflow IDs, paths, observation counts and still-unknown live authority fields are preserved in `docs/governance/1682-observed-legacy-push-p0-20261122.json`.
+
+The 463 provider-active identities absent from *both pinned source root trees* have now been separated into mutually exclusive **filename-only** review queues (NOT capability or risk conclusions):
+
+| Review queue (first filename match wins) | Provider-only identities |
+|---|---:|
+| deploy/release/rollout/publish/cutover | 53 |
+| repair/recover/rollback/patch | 41 |
+| install/bootstrap/provision/activate | 13 |
+| runtime/relay/executor/scheduler/node | 41 |
+| audit/inspect/diagnostic/acceptance/guard | 165 |
+| no keyword match | 150 |
+| **Total** | **463** |
+
+The run-history sample observed one provider-only path, `legacy-workflow-publisher-inventory.yml`, with 50 runs outside the old branch; the sample has incomplete pagination, so **the other 462 must not be called inactive**. Neither an active provider flag nor a suggestive name proves present branch-trigger reachability. Some source files may have existed only on older deleted branches, while others may still be referenced indirectly.
+
+**Next G0 proof:** verify the 16 observed P0 Workflow IDs' precise run jobs, invocation/credentials and Oracle mutation Receipts; reconcile the 463 provider-only paths to GitHub branch refs, callable-workflow references and provider states, with rescue-critical paths classified before any disable action.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
