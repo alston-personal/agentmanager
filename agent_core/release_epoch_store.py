@@ -117,6 +117,7 @@ class TargetReleaseEpochStore:
         self, *, repository: str, realm_id: str, environment: str,
         expected_active_epoch: int, new_epoch: int, source_sha: str,
         approval_receipt_id: str, decision: Decision,
+        artifact_digest: str,
     ) -> str:
         """Atomic claim; returns a process-held secret token, never a receipt.
 
@@ -126,6 +127,14 @@ class TargetReleaseEpochStore:
         key = self._identity(repository, realm_id, environment)
         if not decision.allowed or decision.release_epoch != new_epoch:
             raise ReleaseFenceError("unapproved_release_decision")
+        # A decision is only reusable for its original approved release.
+        # This is still a data contract, NOT an authenticated ONE reader.
+        if (decision.repository != repository or decision.realm_id != realm_id
+                or decision.environment != environment
+                or decision.source_commit != source_sha
+                or decision.approval_receipt_id != approval_receipt_id
+                or decision.artifact_digest != artifact_digest):
+            raise ReleaseFenceError("release_decision_scope_mismatch")
         if (type(expected_active_epoch) is not int or expected_active_epoch < 0
                 or type(new_epoch) is not int or new_epoch < 1
                 or not isinstance(source_sha, str) or not SHA_RE.fullmatch(source_sha)
