@@ -140,3 +140,22 @@ The output ZIP includes a `WOW_SUITE_BUILD_MANIFEST.json` enumerating names and 
 
 **What is still blocked:** Nav Assist original ZIP provenance, exact first-party Repo registration/ownership, accurate product-wide source lock (including approved artifact/tag/build identifiers), actual Windows client build and AddOns path, and in-game validation. This is a build primitive, **not** the final complete Suite.
 
+
+## Existing AgentOSWoW sources: bounded candidate packaging
+
+The two real, tracked Lua AddOn directories on this feature branch are `integrations/wow/AgentOSWoW/` and `integrations/wow/AgentOSWoW_R001/`. Run the candidate builder from a checked-out **exact commit** (not an unpinned moving branch):
+
+```bash
+python3 -m scripts.wow_companion_candidate \
+  --expected-commit "$(git rev-parse HEAD)" \
+  --stage-root /tmp/wow-agentos-staged \
+  --output /tmp/wow-agentos-unverified-candidate.zip
+python3 -m unittest tests.test_wow_companion_package tests.test_wow_companion_candidate -v
+```
+
+The candidate builder compares every staged source byte to `git show HEAD:<path>`, rejects source drift and absent/mislisted files, writes a generated exact-file SHA-256 source lock, and invokes the deterministic ZIP builder. It does not copy Nav Assist or claim a complete Suite. Its output intentionally includes `candidate_only=true`, `complete_companion_suite=false`, `nav_assist_included=false`, `game_client_accepted=false`, and `release_approved=false`.
+
+The existing `.github/workflows/wow-companion-suite-contract.yml` now runs **both** packaging test modules, builds this exact-source candidate ZIP, validates its AddOn structure and keeps an **UNVERIFIED** Actions artifact for inspection rather than a GitHub Release. A PR commit alone is not proof CI executed; inspect the exact workflow run and artifact. Do not manually install or publish it as the complete Companion Suite.
+
+The next playable milestone still requires the original authenticated Nav Assist Lua/TOC, proper version/edition acceptance for WoW Forever, optional host-side Bridge proof, Windows installation and rollback. Do not treat absent upstream AddOns or a missing Node registration as authorization to create fake source or bypass bootstrap provenance.
+
