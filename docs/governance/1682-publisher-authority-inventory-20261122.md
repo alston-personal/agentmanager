@@ -161,6 +161,18 @@ Verified exact source interfaces, without claiming installed-Oracle parity:
 
 **Hold design/implementation:** first establish whether ONE already has a reusable release-approval authorizer; establish exact effective Unix/sudo/SSH privileges, full provider quarantine preconditions, rollout compatibility and rescue path. Reconcile #2366's proposed release coordinator with the established Realm lock rather than creating a second active release head. Negative tests must verify stale Client/Executor replay and direct physical side-effect bypass, not just DB receipt rejection.
 
+## G1: two Realm Fabric publish carriers share target, not GitHub concurrency group
+
+Main-source call chain (read-only inspection only): `docs/governance/1682-realm-dual-publisher-callchain-20261122.json`.
+
+- `deploy-realm-fabric-core.yml` has concurrency `realm-fabric-core-deploy`, triggers on main push/manual and PR (PR only validates), checks installed Action Relay revision, then submits the existing `scripts/install_realm_fabric_via_action_relay.py` installer.
+- `deploy-realm-fabric-fenced.yml` uses **another** concurrency group `realm-fabric-deployment-authority`, and its compile job source includes `git fetch origin main`, `git reset --hard origin/main`, `git commit` and `git push origin HEAD:main`. Existing protected branch rules may reject an actual push; no success is inferred. Its deploy job also calls the same Realm installer.
+- The installer **does** claim and verify the existing Realm generation/lease via Action Relay, with status, optional release/advance, install, and final observed SHA checks. Do not rewrite it as an absent lock.
+- The GitHub groups do **not** serialize each other. The target-side Realm lock is the meaningful common mutual exclusion for the shared Realm target; wider Core/Runtime/Relay writers are not thereby covered.
+- The installation chain passes source SHA, textual lease owner and numeric generation, but no mandatory **authenticated ONE approved release intent** field was observed through this call path. This does **not** prove upstream systems perform no authorization, only that the required approval is not enforced in this surveyed installer interface.
+
+**Before G2:** reconcile source-only branch policy and effective GitHub permissions; verify upstream ONE identity attestation to Action Relay capsule; determine whether old fenced Workflow is still needed or must be retired through controlled migration, preserving rescue. Avoid duplicate state machine, speculative patching or unauthorized Workflow disable.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
