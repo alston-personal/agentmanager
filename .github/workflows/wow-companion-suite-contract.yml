@@ -23,7 +23,7 @@ jobs:
       - name: Verify suite and AI reply contracts
         run: python -m unittest tests.test_wow_companion_suite tests.test_wow_companion_reply tests.test_wow_companion_byok tests.test_wow_companion_ingress tests.test_wow_companion_slot tests.test_wow_companion_client_candidate tests.test_wow_companion_frames tests.test_wow_companion_receiver tests.test_wow_companion_bridge_adapter tests.test_wow_companion_publisher -v
       - name: Verify locked-source ZIP builder and rejection cases
-        run: python -m unittest tests.test_wow_companion_package -v
+        run: python -m unittest tests.test_wow_companion_package tests.test_wow_companion_candidate -v
       - name: Build and inspect first-party AgentOSWoW candidate only
         shell: bash
         run: |
