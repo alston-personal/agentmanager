@@ -101,3 +101,42 @@ The candidate branch now selectively includes `agentos_node/wow_slot_publisher.p
 ## Opt-in complete host processing (still not a live Windows transport)
 
 `QuestionBridgeAdapter.accept_and_publish` now makes the existing building blocks callable as one bounded host-side operation. A trusted caller submits a decoded RGB capture and a separately authorized exact preinstalled slot directory. Session authorization, provider credentials, answer validation and atomic writing remain distinct checks. On success the method returns `PUBLISHED`, `published=true`, `game_received=false`; the latter cannot be upgraded without real game readback. Tests cover authorized candidate capture → actual temporary slot write → byte readback, plus denied capture → no provider call/no file write. This is filesystem integration evidence under tests, **not Windows game or ONE Receipt evidence**.
+
+## Source-locked ZIP packaging (candidate, no installation)
+
+`scripts/wow_companion_package.py` assembles a deterministic AddOns ZIP **only** when every local source file matches its allowlisted exact SHA-256. This stage does not download, provision a repository, install, or assert game-client compatibility. It fails closed on absent source files (including unrecovered Nav Assist), invalid paths, symlinks, checksum drift, duplicate destinations and missing top-level AddOn `.toc` entries.
+
+Use a separately reviewed JSON source lock with this schema:
+
+```json
+{
+  "schema": "agentos.wow-suite-source-lock/v1",
+  "files": [
+    {
+      "addon": "ExampleAddon",
+      "path": "ExampleAddon.toc",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX_DIGITS"
+    },
+    {
+      "addon": "ExampleAddon",
+      "path": "ExampleAddon.lua",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX_DIGITS"
+    }
+  ]
+}
+```
+
+The exact local source layout is `SOURCE_ROOT/ExampleAddon/ExampleAddon.toc` etc. A lock entry alone is not evidence of licensing, a Git release tag, game version, or first-party ownership; source ownership and release provenance must be reviewed separately before distribution.
+
+```bash
+python3 scripts/wow_companion_package.py \
+  --lock path/to/approved-source-lock.json \
+  --sources-root path/to/staged-addons \
+  --output out/wow-companion-candidate.zip
+python3 -m unittest tests.test_wow_companion_package tests.test_wow_companion_suite -v
+```
+
+The output ZIP includes a `WOW_SUITE_BUILD_MANIFEST.json` enumerating names and hashes and reports its own SHA-256. Its status is `source-verified-not-game-validated`. Do not put provider secrets or host bridge credentials in staged AddOns. Do not publish the ZIP to Studio or attempt live installation until real Forever client compatibility and the separate Windows installer rollback acceptance have passed.
+
+**What is still blocked:** Nav Assist original ZIP provenance, exact first-party Repo registration/ownership, accurate product-wide source lock (including approved artifact/tag/build identifiers), actual Windows client build and AddOns path, and in-game validation. This is a build primitive, **not** the final complete Suite.
+
