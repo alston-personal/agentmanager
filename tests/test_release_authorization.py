@@ -39,7 +39,7 @@ def scenario():
 def test_only_matching_trusted_approval_and_newer_epoch_are_eligible():
     request, approved, target = scenario()
     result = verify_release_intent(
-        request=request, approved_intent=approved, observed_target=target, now=NOW)
+        request=request, approved_intent=approved, observed_target=target, authenticated_principal="workflow-issuer:1234", now=NOW)
     assert result.allowed is True
     assert result.release_epoch == 8
     assert "requires_atomic_target_cas" in result.reason
@@ -52,7 +52,6 @@ def test_only_matching_trusted_approval_and_newer_epoch_are_eligible():
     (("intent", "state", "draft"), "release_not_approved"),
     (("intent", "artifact_digest", ""), "missing_immutable_artifact_digest"),
     (("intent", "approval_receipt_id", ""), "missing_approval_receipt"),
-    (("request", "authenticated_principal", "legacy-executor"), "principal_not_authorized"),
     (("request", "realm_id", "other-realm"), "scope_mismatch_realm_id"),
     (("request", "operation", "social.deploy"), "scope_mismatch_operation"),
     (("request", "release_epoch", 7), "request_epoch_mismatch"),
@@ -66,7 +65,7 @@ def test_rejects_unapproved_source_and_concurrent_epochs(mutation, reason):
     where, key, value = mutation
     {"request": request, "intent": approved, "target": target}[where][key] = value
     result = verify_release_intent(
-        request=request, approved_intent=approved, observed_target=target, now=NOW)
+        request=request, approved_intent=approved, observed_target=target, authenticated_principal="workflow-issuer:1234", now=NOW)
     assert result.allowed is False
     assert result.reason == reason
 
@@ -75,10 +74,10 @@ def test_missing_authoritative_data_fails_closed():
     request, approved, target = scenario()
     assert verify_release_intent(
         request=request, approved_intent=None, observed_target=target,
-        now=NOW).reason == "missing_trusted_release_intent"
+        authenticated_principal="workflow-issuer:1234", now=NOW).reason == "missing_trusted_release_intent"
     assert verify_release_intent(
         request=request, approved_intent=approved, observed_target=None,
-        now=NOW).reason == "missing_trusted_target_epoch"
+        authenticated_principal="workflow-issuer:1234", now=NOW).reason == "missing_trusted_target_epoch"
 
 
 def test_request_must_not_supply_self_approved_intent():
@@ -86,4 +85,14 @@ def test_request_must_not_supply_self_approved_intent():
     request["approved_intent"] = approved
     assert verify_release_intent(
         request=request, approved_intent=None, observed_target=target,
-        now=NOW).allowed is False
+        authenticated_principal="workflow-issuer:1234", now=NOW).allowed is False
+
+
+def test_caller_claim_cannot_substitute_for_verified_identity():
+    request, approved, target = scenario()
+    request["authenticated_principal"] = "workflow-issuer:1234"
+    result = verify_release_intent(
+        request=request, approved_intent=approved, observed_target=target,
+        authenticated_principal="untrusted-old-executor", now=NOW)
+    assert result.allowed is False
+    assert result.reason == "principal_not_authorized"
