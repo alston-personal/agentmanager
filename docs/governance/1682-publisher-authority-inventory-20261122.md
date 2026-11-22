@@ -149,6 +149,18 @@ The existing [`oracle-attest-governance-permissions.yml`](https://github.com/als
 
 **G1 entry rule:** map every mutating ingress to one trustworthy exact-operation ONE approval and target-side CAS/fencing boundary, then independently test old Client/GitHub/Runner bypass attempts. Await G0 provider and Oracle reconciliation before promoting this preliminary matrix to an accepted integrated design.
 
+## G1 approval-to-physical-effect gap review (no new authority proposed)
+
+The separately versioned evidence matrix `docs/governance/1682-publisher-authority-gap-review-20261122.json` specifies **five distinct proof boundaries**: (1) independently authenticated ONE release intent, (2) trusted requestor identity, (3) target-side fencing of *every* external writer, (4) rollback/rescue, and (5) independently timestamped Oracle readback. The first two are currently not demonstrated end-to-end, target-side fence exists for Realm Fabric only, and current Core/Relay/Realm readback is incomplete.
+
+Verified exact source interfaces, without claiming installed-Oracle parity:
+- `agentos_node/action_relay.py::_claim_realm_fabric_deployment` accepts `desired_core_commit`, `lease_owner`, `expected_generation` (optional TTL), stores state under existing lock, but has **no mandatory authenticated ONE approval record** as a claim argument. The existing mechanism is a valuable state/generation gate, NOT a complete principal/authorization gate by itself.
+- `agent_core/runtime_converge_contract.py` still allows source `core/integration`; separate runtime-converge implementation changes Git and runtime. The Realm state must not be assumed to cover it.
+- Legacy `oracle-core-bundle-immutable-runtime-convergence.yml` allows `core/integration` Push, uses `GITHUB_SHA` as the remote source commit, and changes external Core Worktree and systemd services; it has a separate GitHub concurrency key and rollback but is not shown to consume the Realm generation or an authenticated ONE intent. Such SHA is *source identity*, not *approval*.
+- `_install_realm_fabric_release` has a missing-repo `.git` early-return after opening/flocking `_deployment_guard` and before normal close. This is a **source-level potential lock lifetime issue**, not evidence a production lock remains stuck. Record and review it in G2; do not spin off a new repair PR now.
+
+**Hold design/implementation:** first establish whether ONE already has a reusable release-approval authorizer; establish exact effective Unix/sudo/SSH privileges, full provider quarantine preconditions, rollout compatibility and rescue path. Reconcile #2366's proposed release coordinator with the established Realm lock rather than creating a second active release head. Negative tests must verify stale Client/Executor replay and direct physical side-effect bypass, not just DB receipt rejection.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
