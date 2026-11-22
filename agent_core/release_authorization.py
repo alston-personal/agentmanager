@@ -28,8 +28,11 @@ class Decision:
     artifact_digest: str | None = None
     approval_receipt_id: str | None = None
     repository: str | None = None
+    project_id: str | None = None
     realm_id: str | None = None
     environment: str | None = None
+    operation: str | None = None
+    authorized_principal: str | None = None
 
 
 def _utc(value: Any) -> datetime | None:
@@ -119,6 +122,7 @@ def verify_release_intent(
         True, "preflight_eligible_requires_atomic_target_cas", epoch,
         source_commit=sha, artifact_digest=digest,
         approval_receipt_id=approved_intent["approval_receipt_id"],
-        repository=request["repository"], realm_id=request["realm_id"],
-        environment=request["environment"],
+        repository=request["repository"], project_id=request["project_id"],
+        realm_id=request["realm_id"], environment=request["environment"],
+        operation=request["operation"], authorized_principal=authenticated_principal,
     )
