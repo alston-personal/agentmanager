@@ -37,12 +37,13 @@ jobs:
           test "${#sha}" = 40
           printf 'legacy_source_sha=%s\n' "$sha"
           mkdir -p "$RUNNER_TEMP/legacy-workflow-snapshot"
-          git archive refs/remotes/origin/core/integration .github/workflows             | tar -xf - -C "$RUNNER_TEMP/legacy-workflow-snapshot"
+          git archive refs/remotes/origin/core/integration .github/workflows .agentos/governance/legacy-direct-oracle-workflows.txt             | tar -xf - -C "$RUNNER_TEMP/legacy-workflow-snapshot"
       - name: Inventory ALL legacy workflows without executing them
         shell: bash
         run: |
           set -euo pipefail
           python scripts/audit_legacy_workflow_publishers.py             --root "$RUNNER_TEMP/legacy-workflow-snapshot"             --output "$RUNNER_TEMP/legacy-workflow-census.json"             --expected-count 453
+            --quarantine-list "$RUNNER_TEMP/legacy-workflow-snapshot/.agentos/governance/legacy-direct-oracle-workflows.txt"
           python - "$RUNNER_TEMP/legacy-workflow-census.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           d = json.load(open(sys.argv[1], encoding="utf-8"))
