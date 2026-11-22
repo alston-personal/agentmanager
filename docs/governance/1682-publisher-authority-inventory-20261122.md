@@ -116,6 +116,19 @@ The pinned main tree contains existing Oracle inspection flows; a new runtime in
 
 The existing `agentos-core` MCP offers continuation/IR readings, not a dedicated Oracle loaded-PID and OS-write-permission attestation. No Workflow dispatch was executed during this G0 read-only audit. Runtime truth for **current** 2026-11-22 still needs an independently authorized Oracle readback; do not substitute historical successful deployments or source-only checks for that receipt.
 
+## Historical Team drift reconciled — no repeat fix
+
+Read-only comparison of accepted prior Oracle evidence and subsequent actual job logs:
+- Oct 6 full Core audit [run 37394284772](https://github.com/alston-personal/agentmanager/actions/runs/37394284772): ten immutable service paths, zero mutable.
+- Nov 9 Core Bundle historical SSH deploy [run 42576789610](https://github.com/alston-personal/agentmanager/actions/runs/42576789610): installed immutable SHA `f9d6c93d...`, restarted services, checked runtime.
+- Nov 15 full Core audit [run 43657091837](https://github.com/alston-personal/agentmanager/actions/runs/43657091837), job 132637918255: **9 immutable / 1 mutable**; the mutable service was `teams-commander.service`, while `os-lobster` and several others were `inactive` (service health is not part of this path audit). This historical deviation was **already recorded and investigated** in #1682, not a new root-cause discovery.
+- Nov 21 21:05Z / **Nov 22 05:05 Taiwan** read-only Teams preflight [run 44949671719](https://github.com/alston-personal/agentmanager/actions/runs/44949671719), job 136984604799: `owner_class=validated_immutable_release`, eight checks true, `converge` and `teams-immutable-cutover` skipped. This newer observation **supersedes the Nov 15 Teams-only mutable evidence**; it does not attest all ten Core services or prove that the new release was deployed by this PR.
+- Existing #1682 work already included merged Teams guards (#2311, #2312, #2313) and the new read-only acceptance in Draft #2366. **Do not implement another Teams migration** based solely on the old 9/10 audit.
+
+**Credential authority mismatch that still requires review:** the *read-only-labeled* `oracle-core-service-runtime-audit.yml` and mutating `oracle-core-bundle-immutable-runtime-convergence.yml` both reference the exact same `AGENTOS_DEPLOY_SSH_KEY || N8N_DEPLOY_SSH_KEY` and user/port secrets for hosted SSH. Read-only **commands** do not imply a read-only **principal**. The effective SSH forced-command/Unix/sudo/file permissions and trust of PR-triggered workflow source must be independently attested. No credential exposure is asserted, and no SSH credential was used in this audit.
+
+Evidence matrix: `docs/governance/1682-oracle-runtime-temporal-reconciliation-20261122.json`. Current full-Core runtime and audit-principal privileges remain **UNKNOWN**.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
