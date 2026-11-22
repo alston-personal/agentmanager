@@ -208,9 +208,32 @@ def main():
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--expected-count", type=int, default=0)
+    parser.add_argument("--quarantine-list", type=Path)
     args = parser.parse_args()
     rows = scan(args.root)
     result = report(rows)
+    if args.quarantine_list:
+        listed = {
+            line.strip() for line in args.quarantine_list.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        rowmap = {r["path"]: r for r in rows}
+        hazardous = {
+            r["path"] for r in rows
+            if r["is_active_workflow_path"] and r["legacy_push"]
+            and r["classification"] == "mutating_signal"
+        }
+        result["legacy_quarantine_coverage"] = {
+            "baseline_entries": len(listed),
+            "baseline_paths_present": len(listed & set(rowmap)),
+            "baseline_paths_missing": sorted(listed - set(rowmap)),
+            "baseline_root_push_paths": sorted(
+                p for p in listed if p in rowmap and rowmap[p]["is_active_workflow_path"]
+                and rowmap[p]["legacy_push"]
+            ),
+            "baseline_mutating_push_paths": sorted(listed & hazardous),
+            "not_in_baseline_mutating_push_paths": sorted(hazardous - listed),
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("legacy_workflows_total=" + str(len(rows)))
@@ -224,6 +247,13 @@ def main():
     print("legacy_mutating_push=" + str(result["mutating_legacy_push_count"]))
     print("legacy_priority_review=" + str(result["priority_review_count"]))
     print("legacy_unreadable=" + str(len(result["unreadable_paths"])))
+    if args.quarantine_list:
+        baseline = result["legacy_quarantine_coverage"]
+        for key in ("baseline_entries", "baseline_paths_present"):
+            print("legacy_quarantine_" + key + "=" + str(baseline[key]))
+        for key in ("baseline_paths_missing", "baseline_root_push_paths",
+                    "baseline_mutating_push_paths", "not_in_baseline_mutating_push_paths"):
+            print("legacy_quarantine_" + key + "=" + str(len(baseline[key])))
     if args.expected_count and len(rows) != args.expected_count:
         raise SystemExit("legacy_workflow_count_changed: inspect new tree first")
     if result["unreadable_paths"]:
