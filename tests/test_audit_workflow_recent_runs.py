@@ -1,6 +1,8 @@
 """Recent GitHub Actions run triage never confuses CI status with deployment proof."""
 import unittest
-from scripts.audit_workflow_recent_runs import build_evidence
+from unittest.mock import patch
+import json
+from scripts.audit_workflow_recent_runs import build_evidence, fetch_recent_runs
 
 
 class RecentRunTriageTest(unittest.TestCase):
@@ -39,6 +41,21 @@ class RecentRunTriageTest(unittest.TestCase):
         self.assertNotIn("legacy_push_runs", by_id[88])
         self.assertEqual(by_id[77]["other_branch_runs"], 1)
         self.assertEqual(d["candidate_recent_legacy_push_count"], 1)
+
+    def test_short_last_page_does_not_hide_github_result_window_cap(self):
+        response = json.dumps({
+            "total_count": 2500,
+            "workflow_runs": [{"id": i} for i in range(80)],
+        })
+        with patch("scripts.audit_workflow_recent_runs.subprocess.check_output",
+                   return_value=response) as mocked:
+            rows, incomplete, total = fetch_recent_runs(
+                "alston-personal/agentmanager", "2026-10-23", max_pages=30,
+                branch="core/integration")
+        self.assertEqual(len(rows), 80)
+        self.assertEqual(total, 2500)
+        self.assertTrue(incomplete)
+        self.assertIn("branch=core%2Fintegration", mocked.call_args.args[0][2])
 
     def test_incomplete_history_does_not_become_zero_risk(self):
         provider = {"workflows": [{"workflow_id": 1,
