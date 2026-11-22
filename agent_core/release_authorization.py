@@ -80,10 +80,10 @@ def verify_release_intent(
     # An approved source SHA alone cannot authorize deploying different bytes.
     if request.get("artifact_digest") != digest:
         return Decision(False, "artifact_digest_not_approved")
-    if request.get("approval_receipt_id") != approved_intent.get("approval_receipt_id"):
-        return Decision(False, "approval_receipt_mismatch")
     if not isinstance(approved_intent.get("approval_receipt_id"), str) or not approved_intent["approval_receipt_id"]:
         return Decision(False, "missing_approval_receipt")
+    if request.get("approval_receipt_id") != approved_intent["approval_receipt_id"]:
+        return Decision(False, "approval_receipt_mismatch")
     if not isinstance(approved_intent.get("authorized_principal"), str) or not approved_intent["authorized_principal"]:
         return Decision(False, "missing_authorized_principal")
     if (not isinstance(authenticated_principal, str) or not authenticated_principal
