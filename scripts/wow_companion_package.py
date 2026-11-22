@@ -56,11 +56,16 @@ def build_bundle(lock_file: Path, sources_root: Path, output: Path) -> dict:
         if target in payloads:
             raise BundleError("duplicate output path")
         src = sources_root / addon / path
+        check = sources_root / addon
+        if check.is_symlink():
+            raise BundleError("symlink source directories are forbidden")
+        for part in Path(path).parts:
+            check = check / part
+            if check.is_symlink():
+                raise BundleError("symlink sources are forbidden")
         resolved = src.resolve(strict=True)
         if not resolved.is_relative_to(sources_root) or not resolved.is_file():
             raise BundleError("source escapes locked directory")
-        if resolved.is_symlink() or src.is_symlink():
-            raise BundleError("symlink sources are forbidden")
         blob = resolved.read_bytes()
         if hashlib.sha256(blob).hexdigest() != digest:
             raise BundleError(f"SHA256 mismatch for {target}")
@@ -70,8 +75,21 @@ def build_bundle(lock_file: Path, sources_root: Path, output: Path) -> dict:
         payloads[target] = blob
         addons.setdefault(addon, set()).add(path)
     for addon, files in addons.items():
-        if f"{addon}.toc" not in files:
+        toc_name = f"{addon}.toc"
+        if toc_name not in files:
             raise BundleError(f"missing top-level TOC for {addon}")
+        toc_bytes = payloads[f"{addon}/{toc_name}"]
+        try:
+            toc_text = toc_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise BundleError(f"TOC must use UTF-8: {addon}") from exc
+        for line in toc_text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            referenced = _relative(line.replace("\\\\", "/"))
+            if referenced not in files:
+                raise BundleError(f"TOC references an unlocked source: {addon}/{referenced}")
     output.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "schema": "agentos.wow-suite-package-manifest/v1",
