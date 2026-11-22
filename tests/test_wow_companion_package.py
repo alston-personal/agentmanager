@@ -60,6 +60,12 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(BundleError, "missing top-level TOC"):
             build_bundle(self.lock, self.root / "source", self.out)
 
+    def test_refuse_toc_reference_not_in_lock(self):
+        self.lock_entries = [self.lock_entries[0]]
+        self.write_lock()
+        with self.assertRaisesRegex(BundleError, "TOC references an unlocked source"):
+            build_bundle(self.lock, self.root / "source", self.out)
+
     def test_refuse_missing_file(self):
         self.lua.unlink()
         with self.assertRaises(FileNotFoundError):
