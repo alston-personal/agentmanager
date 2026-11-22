@@ -742,7 +742,7 @@ def test_teams_cutover_bootstrap_rejects_any_other_dispatch_before_side_effects(
             "inputs": inputs,
         },
     }
-    with pytest.raises(ValueError, match="not allowlisted|only allows exact"):
+    with pytest.raises(ValueError, match="not allowlisted|requires exact"):
         bc._validate_request(tmp_path / "teams-cutover.request.json", req)
 
 
