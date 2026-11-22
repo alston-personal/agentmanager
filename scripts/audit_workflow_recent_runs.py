@@ -16,14 +16,17 @@ import subprocess
 from urllib.parse import urlencode
 
 
-def fetch_recent_runs(repo: str, since: str, max_pages: int = 30):
+def fetch_recent_runs(repo: str, since: str, max_pages: int = 30, branch: str | None = None):
     if len(repo.split("/")) != 2 or any(not part for part in repo.split("/")):
         raise ValueError("invalid repository")
     runs = []
     incomplete = False
     total = None
     for page in range(1, max_pages + 1):
-        query = urlencode({"per_page": 100, "page": page, "created": ">=" + since})
+        params = {"per_page": 100, "page": page, "created": ">=" + since}
+        if branch:
+            params["branch"] = branch
+        query = urlencode(params)
         output = subprocess.check_output(
             ["gh", "api", f"repos/{repo}/actions/runs?{query}"],
             text=True, timeout=30,
@@ -37,8 +40,9 @@ def fetch_recent_runs(repo: str, since: str, max_pages: int = 30):
         runs.extend(rows)
         if len(rows) < 100:
             break
-    else:
-        incomplete = bool(total is None or total > len(runs))
+    # GitHub may stop at a hard result-window cap while total_count still
+    # exceeds the items returned. A short last page is not completeness proof.
+    incomplete = bool(total is None or total > len(runs))
     return runs, incomplete, total
 
 
@@ -138,14 +142,38 @@ def main():
     if not 1 <= args.days <= 90 or not 1 <= args.max_pages <= 60:
         raise SystemExit("run_history_window_out_of_bounds")
     since = (datetime.now(timezone.utc) - timedelta(days=args.days)).date().isoformat()
-    runs, incomplete, total = fetch_recent_runs(
-        os.environ.get("GITHUB_REPOSITORY", ""), since, args.max_pages
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    general_runs, general_incomplete, general_total = fetch_recent_runs(
+        repo, since, args.max_pages
     )
+    legacy_runs, legacy_incomplete, legacy_total = fetch_recent_runs(
+        repo, since, args.max_pages, branch="core/integration"
+    )
+    # Distinct query windows prevent high-volume main PR traffic from hiding
+    # older core/integration runs. Merge by provider's immutable run ID.
+    merged = {}
+    for run in [*general_runs, *legacy_runs]:
+        run_id = run.get("id")
+        if not isinstance(run_id, int):
+            raise SystemExit("workflow_history_missing_run_id")
+        merged[run_id] = run
+    runs = list(merged.values())
+    incomplete = general_incomplete or legacy_incomplete
     provider = json.loads(args.provider.read_text(encoding="utf-8"))
-    evidence = build_evidence(provider, runs, since, incomplete, total)
+    evidence = build_evidence(provider, runs, since, incomplete, general_total)
+    evidence["query_windows"] = {
+        "all": {"observed": len(general_runs), "reported": general_total,
+                "incomplete": general_incomplete},
+        "core_integration": {"observed": len(legacy_runs),
+                             "reported": legacy_total,
+                             "incomplete": legacy_incomplete},
+    }
+    evidence["legacy_branch_run_rows_observed"] = sum(
+        run.get("head_branch") == "core/integration" for run in runs
+    )
     args.output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
-    for key in ("run_rows_observed", "pagination_incomplete",
+    for key in ("run_rows_observed", "legacy_branch_run_rows_observed", "pagination_incomplete",
                 "candidate_recent_legacy_push_count",
                 "candidate_recent_legacy_nonpush_count"):
         print(f"workflow_history_{key}={evidence[key]}")
