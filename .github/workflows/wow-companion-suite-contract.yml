@@ -22,6 +22,41 @@ jobs:
           python-version: "3.12"
       - name: Verify suite and AI reply contracts
         run: python -m unittest tests.test_wow_companion_suite tests.test_wow_companion_reply tests.test_wow_companion_byok tests.test_wow_companion_ingress tests.test_wow_companion_slot tests.test_wow_companion_client_candidate tests.test_wow_companion_frames tests.test_wow_companion_receiver tests.test_wow_companion_bridge_adapter tests.test_wow_companion_publisher -v
+      - name: Verify locked-source ZIP builder and rejection cases
+        run: python -m unittest tests.test_wow_companion_package -v
+      - name: Build and inspect first-party AgentOSWoW candidate only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.wow_companion_candidate \
+            --expected-commit "$GITHUB_SHA" \
+            --stage-root "$RUNNER_TEMP/wow-agentos-staged" \
+            --output "$RUNNER_TEMP/wow-agentos-unverified-candidate.zip" > "$RUNNER_TEMP/wow-package-result.json"
+          python - <<'PY'
+          import json, os, zipfile
+          from pathlib import Path
+          report = json.loads((Path(os.environ["RUNNER_TEMP"]) / "wow-package-result.json").read_text())
+          assert report["candidate_only"] is True
+          assert report["complete_companion_suite"] is False
+          assert report["nav_assist_included"] is False
+          assert report["game_client_accepted"] is False
+          assert report["release_approved"] is False
+          assert report["addon_folders"] == ["AgentOSWoW", "AgentOSWoW_R001"]
+          with zipfile.ZipFile(Path(os.environ["RUNNER_TEMP"]) / "wow-agentos-unverified-candidate.zip") as package:
+              names = package.namelist()
+              assert "AgentOSWoW/AgentOSWoW.toc" in names
+              assert "AgentOSWoW_R001/AgentOSWoW_R001.toc" in names
+              assert "WOW_SUITE_BUILD_MANIFEST.json" in names
+          print("wow_addon_candidate_source_lock=PASS")
+          PY
+      - name: Preserve unverified candidate for manual inspection (not release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wow-agentos-source-locked-UNVERIFIED
+          path: |
+            ${{ runner.temp }}/wow-agentos-unverified-candidate.zip
+            ${{ runner.temp }}/wow-package-result.json
+          if-no-files-found: error
       - name: Verify plans are dry-run only
         run: |
           python scripts/wow_companion_suite.py --profile minimal > /tmp/wow-plan.json
