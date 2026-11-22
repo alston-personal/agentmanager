@@ -7,6 +7,7 @@ No network calls, subprocesses, secret values, or repository mutations.
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 import re
 from collections import Counter
@@ -81,7 +82,7 @@ def scan(root: Path):
             continue
         rel = path.relative_to(root).as_posix()
         row = {
-            "path": rel, "events": [], "signals": [], "review_signals": [],
+            "path": rel, "source_sha256": sha256(path.read_bytes()).hexdigest(), "events": [], "signals": [], "review_signals": [],
             "called_workflows": [], "parse_error": None, "job_count": 0,
             "active_trigger": False, "automatic_trigger": False,
             "manual_trigger": False, "reusable_trigger": False,
