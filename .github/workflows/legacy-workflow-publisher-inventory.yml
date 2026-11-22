@@ -103,12 +103,14 @@ jobs:
           set -euo pipefail
           python scripts/audit_workflow_provider_status.py \
             --source "$RUNNER_TEMP/legacy-workflow-census.json" \
+            --main "$RUNNER_TEMP/main-workflow-census.json" \
             --output "$RUNNER_TEMP/workflow-provider-state.json"
           python - "$RUNNER_TEMP/workflow-provider-state.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           d = json.load(open(sys.argv[1], encoding="utf-8"))
           print("## GitHub provider Workflow states (read-only)")
           print("- provider_listed_workflows: " + str(d["provider_listed_workflows"]))
+          print("- provider_not_in_either_branch_active: " + str(d["provider_not_in_either_branch_active_count"]))
           for k, v in sorted(d["legacy_push_mutating_state_counts"].items()):
               print("- legacy_push_mutating_" + k + ": " + str(v))
           print("Provider enabled-state is not proof a branch job can execute or deploy.")
