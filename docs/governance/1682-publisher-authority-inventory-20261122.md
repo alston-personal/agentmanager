@@ -34,6 +34,19 @@ The table deliberately distinguishes **observed source** from **live producer**,
 - Previous #2366 review evidence reported, for an explicitly different pinned legacy-branch snapshot, **449 executable legacy Workflow roots**, **254** with integration Push and **122** with static potential side-effect patterns. These figures are **prior evidence requiring regeneration**, not present-day verified state or proof that all are active.
 - Any Workflow not yet classified is **UNKNOWN**, never implicitly SAFE; build a complete provider-ID/workflow-path/branch/trigger/action/capability/credential matrix, with provider status and effective target identity.
 
+## Machine-readable baseline census — evidence update
+
+Companion source inventory: `docs/governance/1682-workflow-source-census-20261122.json` (pinned Git blob SHAs, paths, triage and evidence strength).
+
+- **617 / 617** Workflow YAML paths have been enumerated from the pinned `main` tree, without truncation.
+- **23 / 617** selected higher-priority Workflow sources have undergone *limited static pattern scans*; **594 / 617** remain explicitly `unreviewed`.
+- Filename-only triage: 188 priority-1 candidates, 289 priority-2 candidates, 140 priority-3 candidates. These are **queue priorities**, not write-capability or active-state verdicts.
+- A limited static scan found explicit SSH/systemctl/sudo tokens in Core Bundle, Core deploy, invoice intake, employee recovery, and other paths. A zero-match file is **not** evidence of no effects: workflow steps may call external scripts/capabilities.
+- **Provider state blocker:** the connected GitHub fetch capability rejected the repository-wide Actions Workflow listing endpoint, so no exhaustive provider `active`/`disabled` classification or Workflow-ID mapping was obtained this round. The existing per-commit workflow-run reader supports observed executions, not a full provider census.
+- **Oracle state blocker:** runtime-loaded unit, real principals, direct write privileges and rescue availability have not been read back from Oracle.
+
+Next G0 work must reconcile source paths **and** GitHub provider workflow identity, plus indirect effects through reusable Workflows, Action Relay jobs, remote scripts and other repositories. Source scanning alone cannot complete the active-publisher census.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
