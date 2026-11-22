@@ -58,12 +58,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          git fetch --no-tags --depth=1 origin main
+          main_sha="$(git rev-parse FETCH_HEAD)"
           test "${#main_sha}" = 40
           printf 'main_source_sha=%s\n' "$main_sha"
           mkdir -p "$RUNNER_TEMP/main-workflow-snapshot"
-          git archive refs/remotes/origin/main .github/workflows \
+          git archive FETCH_HEAD .github/workflows \
             | tar -xf - -C "$RUNNER_TEMP/main-workflow-snapshot"
       - name: Scan all main workflows and compare both branches
         shell: bash
