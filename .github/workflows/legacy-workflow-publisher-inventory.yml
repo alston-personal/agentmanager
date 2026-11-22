@@ -7,11 +7,14 @@ on:
       - '.github/workflows/legacy-workflow-publisher-inventory.yml'
       - 'scripts/audit_legacy_workflow_publishers.py'
       - 'scripts/compare_workflow_publisher_inventory.py'
+      - 'scripts/audit_workflow_provider_status.py'
+      - 'tests/test_audit_workflow_provider_status.py'
       - 'tests/test_audit_legacy_workflow_publishers.py'
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   inventory:
@@ -27,7 +30,7 @@ jobs:
       - name: Verify scanner contract without external effects
         run: |
           python -m pip install 'PyYAML>=6,<7'
-          python -m unittest tests.test_audit_legacy_workflow_publishers
+          python -m unittest tests.test_audit_legacy_workflow_publishers tests.test_audit_workflow_provider_status
       - name: Fetch only the old branch source as data
         shell: bash
         run: |
@@ -91,6 +94,25 @@ jobs:
               print("- " + key + ": " + str(len(d[key])))
           print("Source signals only, no production mutation or provider state.")
           PY
+      - name: Read GitHub provider Workflow state (no changes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_workflow_provider_status.py \
+            --source "$RUNNER_TEMP/legacy-workflow-census.json" \
+            --output "$RUNNER_TEMP/workflow-provider-state.json"
+          python - "$RUNNER_TEMP/workflow-provider-state.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("## GitHub provider Workflow states (read-only)")
+          print("- provider_listed_workflows: " + str(d["provider_listed_workflows"]))
+          for k, v in sorted(d["legacy_push_mutating_state_counts"].items()):
+              print("- legacy_push_mutating_" + k + ": " + str(v))
+          print("Provider enabled-state is not proof a branch job can execute or deploy.")
+          PY
       - name: Upload non-secret static inventory artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,5 +122,6 @@ jobs:
             ${{ runner.temp }}/legacy-workflow-census.json
             ${{ runner.temp }}/main-workflow-census.json
             ${{ runner.temp }}/cross-branch-workflow-compare.json
+            ${{ runner.temp }}/workflow-provider-state.json
           retention-days: 7
           if-no-files-found: warn
