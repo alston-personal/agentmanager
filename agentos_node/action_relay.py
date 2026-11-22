@@ -1236,6 +1236,20 @@ def _renew_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
             return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
         if state.get('lease_owner') != owner:
             return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        # A delayed old Executor must not resurrect a released/expired lease.
+        # Only a fresh, governed generation claim can establish new authority.
+        if state.get('lease_status') == 'released':
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_released_lease'}
+        expiry_raw = state.get('lease_expires_at')
+        try:
+            expiry = _dr_datetime.fromisoformat(str(expiry_raw).replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                raise ValueError('naive lease timestamp')
+            lease_active = expiry.astimezone(_dr_timezone.utc) > _dr_datetime.now(_dr_timezone.utc)
+        except (TypeError, ValueError, OverflowError):
+            lease_active = False
+        if not lease_active:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_expired_lease'}
         now = _dr_datetime.now(_dr_timezone.utc)
         renewed = dict(state)
         renewed['lease_expires_at'] = (now + _dr_timedelta(seconds=lease_seconds)).isoformat()
