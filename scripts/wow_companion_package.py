@@ -87,7 +87,7 @@ def build_bundle(lock_file: Path, sources_root: Path, output: Path) -> dict:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            referenced = _relative(line.replace("\\\\", "/"))
+            referenced = _relative(line.replace(chr(92), "/"))
             if referenced not in files:
                 raise BundleError(f"TOC references an unlocked source: {addon}/{referenced}")
     output.parent.mkdir(parents=True, exist_ok=True)
