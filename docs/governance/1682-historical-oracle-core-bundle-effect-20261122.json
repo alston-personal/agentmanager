@@ -1,0 +1,47 @@
+{
+  "schema": "agentos.core-bundle-historical-oracle-effect/v1",
+  "status": "historical-job-log-verified",
+  "observed_at_utc": "2026-11-22",
+  "workflow_id": 375122039,
+  "workflow_source": ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml",
+  "executed_run_id": 42576789610,
+  "run_url": "https://github.com/alston-personal/agentmanager/actions/runs/42576789610",
+  "converge_job_id": 129026198176,
+  "job_conclusion": "success",
+  "job_started_at_utc": "2026-11-09T07:02:50Z",
+  "source_commit": "f9d6c93d004e8adb712953be46a10eb36dabb393",
+  "log_observations": [
+    "Preparing worktree (detached HEAD f9d6c93d)",
+    "core_bundle_install_services=DONE",
+    "core_bundle_lobster_restart=DONE",
+    "core_bundle_runtime=os-chronos.service:immutable",
+    "core_bundle_runtime=agentos-core-supervisor.service:immutable",
+    "core_bundle_runtime=agentos-employee-worker-host.service:system-immutable",
+    "core_bundle_source_commit=f9d6c93d004e8adb712953be46a10eb36dabb393",
+    "core_bundle_immutable_runtime=PASS"
+  ],
+  "evidence_strength": "Historical GitHub-hosted remote SSH job output containing Oracle write/install/restart and runtime attestation; stronger than static source, not live current node readback",
+  "recent_pr_comparison": {
+    "run_id": 44999152955,
+    "converge_job_conclusion": "skipped",
+    "preflight_job_conclusion": "success",
+    "meaning": "PR test passed readonly preflight; did not deploy"
+  },
+  "receipt_semantics": {
+    "published_schema": "agentos.core-immutable-deploy-evidence/v1",
+    "published_to_issue": 470,
+    "derived_oracle_runtime_verified": "Set true iff GitHub converge job result equals success; independent readback receipt is not included in this field alone"
+  },
+  "still_unknown": [
+    "Current Oracle loaded version and PID at 2026-11-22",
+    "Whether SSH workflow deploy credentials are still usable now",
+    "Independent ONE human-approved publication receipt bound to exact source commit",
+    "Current OS owner privileges, runner scopes and competing direct-write paths",
+    "Whether rollback/rescue has passed adversarial Oracle tests"
+  ],
+  "prohibitions": [
+    "Do not infer current Oracle version from the historical success",
+    "Do not treat GitHub job success as an independent live Oracle observation",
+    "Do not modify Core bundle or disable legacy workflows as part of this record"
+  ]
+}
