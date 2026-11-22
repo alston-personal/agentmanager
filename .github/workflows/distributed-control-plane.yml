@@ -55,4 +55,6 @@ jobs:
           tests/test_runtime_ownership.py tests/test_control_plane_inspection.py
           tests/test_release_authorization.py
           tests/test_release_epoch_store.py
+          tests/test_single_action_relay_github_dispatch.py tests/test_runner_window.py
+          tests/test_action_relay.py
       - run: bash -n scripts/deploy_distributed_control_plane.sh
