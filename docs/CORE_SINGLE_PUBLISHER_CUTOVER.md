@@ -72,3 +72,11 @@ A second strictly read-only GitHub-hosted census (Actions run [44969701146](http
 - Keep three inventories distinct: **(a) source YAML event path**, **(b) provider workflow active/disabled state**, **(c) authenticated Runtime ingress permission and successful production mutation**. They are NOT interchangeable.
 
 **Governance gap is broader than branch convergence:** preventing regressions requires a provider-level lifecycle registry for every Workflow ID, including previously removed-source identities, and a shared exact-main/Realm/release-generation fence at the trusted deployment ingress. Do not bulk-disable all 463 before owner/recovery inventory, and do not interpret all 1,076 as deployers. The audit did not change any workflow state.
+
+## 2026-11-22 — Bounded recent Workflow-run evidence (candidate)
+
+The Provider registry reports an active Workflow identity even when its source branch is no longer present. To prioritize operator review without implying a deployment, the existing **read-only** legacy workflow inventory now joins the 30-day GitHub Actions workflow-run history to each Provider Workflow ID and source classification. It records `head_branch`, `event`, observed count, success *as Actions conclusion only*, and last seen timestamps; it never fetches job logs, credentials, artifacts from the run, or causes execution.
+
+Priority `p0` identifies an already flagged legacy push/side-effect candidate with an **observed core/integration Push run**; `p1` indicates another observed legacy-branch run; `p2` means no observed legacy run in the bounded sample; `p3` covers other registered workflows. An incomplete paginated scan is explicitly marked. `p2` is not disabled, `p0` is not proof of production changes, and a successful GitHub Actions run is not proof of a correct Oracle release. Actual recent-run totals and priority counts must come from the corresponding GitHub CI artifact, not static assertions.
+
+This remains a triage aid. Global ownership attribution, provider ruleset write, Workflow disable, release ingress fencing and real rollback acceptance are still separate gates.
