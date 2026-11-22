@@ -155,6 +155,7 @@ def scan(root: Path):
             row["classification"] = "manual_review_required"
         else:
             row["classification"] = "no_mutating_signal_observed"
+        row["is_active_workflow_path"] = row["path"].count("/") == 2
         row["legacy_push"] = (
             "push" in row["events"]
             and re.search(r"\bcore/integration\b",
@@ -179,6 +180,15 @@ def report(rows):
         "schema": "agentos.legacy-workflow-publisher-inventory/v1",
         "disclaimer": "Static candidate inventory; not provider enabled-state or live mutation proof",
         "workflow_count": len(rows),
+        "root_workflow_count": sum(r["is_active_workflow_path"] for r in rows),
+        "historical_nested_path_count": sum(not r["is_active_workflow_path"] for r in rows),
+        "root_legacy_push_count": sum(
+            r["is_active_workflow_path"] and r["legacy_push"] for r in rows
+        ),
+        "root_mutating_legacy_push_count": sum(
+            r["is_active_workflow_path"] and r["legacy_push"]
+            and r["classification"] == "mutating_signal" for r in rows
+        ),
         "class_counts": dict(sorted(groups.items())),
         "event_counts": dict(sorted(triggers.items())),
         "legacy_push_count": sum(r["legacy_push"] for r in rows),
@@ -203,6 +213,10 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("legacy_workflows_total=" + str(len(rows)))
+    print("legacy_root_workflows=" + str(result["root_workflow_count"]))
+    print("legacy_history_archives=" + str(result["historical_nested_path_count"]))
+    print("legacy_root_push=" + str(result["root_legacy_push_count"]))
+    print("legacy_root_mutating_push=" + str(result["root_mutating_legacy_push_count"]))
     for name, value in sorted(result["class_counts"].items()):
         print("legacy_class_" + name + "=" + str(value))
     print("legacy_push=" + str(result["legacy_push_count"]))
