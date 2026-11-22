@@ -54,4 +54,5 @@ jobs:
           tests/test_node_registry_v01.py tests/test_node_registry_recovery.py
           tests/test_runtime_ownership.py tests/test_control_plane_inspection.py
           tests/test_release_authorization.py
+          tests/test_release_epoch_store.py
       - run: bash -n scripts/deploy_distributed_control_plane.sh
