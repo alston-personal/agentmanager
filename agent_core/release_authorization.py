@@ -41,13 +41,14 @@ def verify_release_intent(
     request: Mapping[str, Any],
     approved_intent: Mapping[str, Any] | None,
     observed_target: Mapping[str, Any] | None,
+    authenticated_principal: str | None,
     now: datetime,
 ) -> Decision:
     """Evaluate a trusted approval and observed target epoch.
 
-    Caller MUST authenticate `approved_intent` and `observed_target` from ONE
-    or the actual protected target state; neither may be copied from the
-    untrusted request. The result is only a preflight decision; executors still
+    Caller MUST independently authenticate `approved_intent`, the target epoch,
+    and `authenticated_principal` through ONE/Runtime identity. NEVER derive
+    any of these values from request claims or a caller-supplied approval. The result is only a preflight decision; executors still
     need a persisted CAS lease + a just-before-cutover recheck.
     """
     if not isinstance(approved_intent, Mapping):
@@ -79,7 +80,8 @@ def verify_release_intent(
         return Decision(False, "missing_approval_receipt")
     if not isinstance(approved_intent.get("authorized_principal"), str) or not approved_intent["authorized_principal"]:
         return Decision(False, "missing_authorized_principal")
-    if request.get("authenticated_principal") != approved_intent["authorized_principal"]:
+    if (not isinstance(authenticated_principal, str) or not authenticated_principal
+            or authenticated_principal != approved_intent["authorized_principal"]):
         return Decision(False, "principal_not_authorized")
     valid_until = _utc(approved_intent.get("expires_at"))
     if valid_until is None or now.astimezone(timezone.utc) >= valid_until:
