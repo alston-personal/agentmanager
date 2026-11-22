@@ -89,6 +89,12 @@ The run-history sample observed one provider-only path, `legacy-workflow-publish
 
 **Next G0 proof:** verify the 16 observed P0 Workflow IDs' precise run jobs, invocation/credentials and Oracle mutation Receipts; reconcile the 463 provider-only paths to GitHub branch refs, callable-workflow references and provider states, with rescue-critical paths classified before any disable action.
 
+## ONE live selector versus Oracle runtime evidence — read-only query
+
+A live `agentos_project_state("agentos-core")` query at this checkpoint returned the ONE active selector `idx-core-20261122T080116Z-be9333bf` / IR `ir_20261122T080116Z_be9333bf`. Its current goal concerns Windows `vopc5750` Thin Client retirement, **not** this #1682 publisher inventory. Separately, `agentos_resume("agentos-core")` returned an older November 6 submitted task and IR `ir_440756444cbc47d39ab5a5acd4eefaad`. These are different views/continuations, and neither should be overwritten or interpreted as an Oracle deployment receipt.
+
+The connected AgentOS MCP methods available in this chat (`agentos_project_state`, `agentos_resume`, `agentos_task`, `agentos_advance_ir`) **do not provide a dedicated, authenticated Oracle systemd/current-release/permission inspection method**. Therefore G0 Oracle runtime/PID/OS write boundary and recovery evidence remains **UNVERIFIED**. Existing Oracle inspection through an independently authorized runtime provider or known read-only Workflow is required. Do not use `agentos_advance_ir` to repurpose an unrelated active selector merely to record a source audit.
+
 ## Pre-existing capabilities to reuse
 
 - Realm Fabric immutable deployment authority: `docs/CORE_DEPLOYMENT_AUTHORITY.md` and its effective Action Relay.
