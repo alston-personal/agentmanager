@@ -2438,16 +2438,8 @@ def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
         restarted_after_failure = bool(restart.get('ok'))
         raise
 
-def _github_run_created_after(created_at: str, lower_bound: datetime) -> bool:
-    """Correlate workflow runs with this dispatch attempt, not an older same-SHA run."""
-    try:
-        when = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-        return when.tzinfo is not None and when >= lower_bound.re# Duplicate legacy GitHub dispatcher retired: a second definition here had
-# overwritten the Teams-only and protected-main check above at import time.
-# Keep a single governed dispatcher registered in ACTIONS below.
-
-ot None else "dispatched workflow run was not observed before deadline",
-    }
+# The recovered duplicate helper/dispatcher block was retired: the single
+# governed handler earlier in this module remains the ACTIONS registration.
 
 # realm_fabric_deployment_fence_v1
 _DEPLOYMENT_STATE = Path('/home/ubuntu/agent-data/governance/core-deployment.json')
