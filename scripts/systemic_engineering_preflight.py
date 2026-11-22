@@ -93,7 +93,11 @@ def main() -> int:
     if classify(files) == "standard":
         print(json.dumps({"result": "PASS", "risk": "standard", "files": len(files)}))
         return 0
-    manifests = [args.manifest] if args.manifest else sorted(EVIDENCE_ROOT.glob("*.json"))
+    # A PR must introduce or update its own record; old plans cannot bless new work.
+    submitted = {Path(p) for p in files}
+    manifests = [args.manifest] if args.manifest else sorted(
+        p for p in submitted if p.parent == EVIDENCE_ROOT and p.suffix == ".json"
+    )
     failures: list[str] = []
     valid: list[str] = []
     for path in manifests:
@@ -109,6 +113,26 @@ def main() -> int:
             failures.append(f"{path}: {','.join(errors)}")
         else:
             valid.append(str(path))
+    # A plan is not authorization to start implementation. Policy bootstrap
+    # can be proposed as design, but actual code/workflow changes must record
+    # review readiness. Human approval is separately enforced by branch rules.
+    policy_bootstrap_paths = {
+        "AGENTS.md", ".github/workflows/systemic-engineering-preflight.yml",
+    }
+    requires_readiness = any(
+        p.startswith(("agent_core/", "agentos_node/", "governance/", ".agent/governance/"))
+        or (p.startswith(".github/workflows/") and p not in policy_bootstrap_paths)
+        for p in files
+    )
+    if requires_readiness:
+        reviewed = []
+        for p in valid:
+            data = json.loads(Path(p).read_text(encoding="utf-8"))
+            if data.get("ready_for_implementation") is True and data.get("review_status") == "reviewed":
+                reviewed.append(p)
+        valid = reviewed
+        if not valid:
+            failures.append("implementation_requires_reviewed_preflight")
     if not valid:
         print(json.dumps({
             "result": "FAIL", "risk": "high", "reason": "preflight_manifest_required",
