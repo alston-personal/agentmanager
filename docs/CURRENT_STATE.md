@@ -4,6 +4,17 @@ Added `.agent/skills/monthly_report` establishing a two-tier cross-node monthly 
 
 ---
 
+## 2026-11-23 — Confluence Page Properties / User Mention Guard & Browser-Gated Redmine QA Skill
+
+1. **Confluence publish helper hardening** (`.agent/skills/monthly_report/scripts/confluence_publish_helper.py`):
+   - Enforces `wrap_page_properties_details()` (`<ac:structured-macro ac:name="details">`) so parent `DQDIS Weekly Report` Page Properties Report macros always index updated reports.
+   - Enforces real Confluence user mentions (`format_user_mention()`) and automatic `<ac:link><ri:attachment>` linking for uploaded attachments.
+   - Verified with `tests/test_monthly_report_coordinator.py` (4/4 PASS).
+2. **Browser-gated Redmine QA Workflow Skill** (`.agent/skills/redmine_qa_workflow/SKILL.md`):
+   - Formalized `capability://qa.redmine.workflow` (`issue draft / update / create` and `final report`) scoped strictly to `browser.gui`-capable nodes (`vopc5750`).
+
+---
+
 ## 2026-11-23 — Two-Tier Cross-Node Monthly Report Coordinator (`capability://governance.report.monthly`)
 
 1. **Oracle Coordinator & Human Review Gate**:
