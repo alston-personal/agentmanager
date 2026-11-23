@@ -56,6 +56,50 @@ jobs:
               raise SystemExit("intake_snapshot_not_exhaustive")
           print("approved_issue_snapshot_count="+str(len(data)))
           PY
+      - name: Fetch explicit open-and-closed Issue states for read-only closure audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Separate from the open-only intake snapshot. Never infer closure from absence.
+          python3 - "${RUNNER_TEMP}/issue-closure-states.json" <<'PY'
+          import json,os,sys,urllib.error,urllib.parse,urllib.request
+          dest=sys.argv[1]
+          token=os.environ["GH_TOKEN"]
+          result=[]
+          # Bounded, exhaustive pagination. A full final page is NOT proof of completeness.
+          for page in range(1, 21):
+              url=("https://api.github.com/repos/alston-personal/agentmanager/issues"
+                   "?state=all&labels=agentos%3Aapproved&per_page=100&page="+str(page))
+              req=urllib.request.Request(url,headers={
+                  "Authorization":"Bearer "+token,
+                  "Accept":"application/vnd.github+json",
+                  "User-Agent":"agentos-issue-closure-audit/1"})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as response:
+                      rows=json.load(response)
+              except (urllib.error.URLError,TimeoutError,ValueError) as exc:
+                  raise SystemExit("closure_snapshot_fetch_failed:"+type(exc).__name__)
+              if not isinstance(rows,list):
+                  raise SystemExit("closure_snapshot_invalid")
+              for item in rows:
+                  if not isinstance(item,dict):
+                      raise SystemExit("closure_snapshot_entry_invalid")
+                  if "pull_request" in item:
+                      continue
+                  number,state=item.get("number"),item.get("state")
+                  if type(number) is not int or number<1 or state not in ("open","closed"):
+                      raise SystemExit("closure_snapshot_state_invalid")
+                  result.append({"number":number,"state":state})
+              if len(rows)<100:
+                  break
+          else:
+              raise SystemExit("closure_snapshot_page_limit_exceeded")
+          with open(dest,"w",encoding="utf-8") as f:
+              json.dump(result,f,sort_keys=True)
+          print("closure_snapshot_count="+str(len(result)))
+          PY
       - name: Register eligible, approved Issues against Oracle durable Ledger
         shell: bash
         run: |
@@ -67,6 +111,9 @@ jobs:
             'mkdir -p /home/ubuntu/agent-data/governance/issue-intake'
           scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -P "$port" \
             "${RUNNER_TEMP}/approved-issues.json" "$target:/home/ubuntu/agent-data/governance/issue-intake/latest-approved-issues.json"
+          # Data-only issue state snapshot; never send the GitHub token to Oracle.
+          scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -P "$port" \
+            "${RUNNER_TEMP}/issue-closure-states.json" "$target:/home/ubuntu/agent-data/governance/issue-intake/latest-issue-closure-states.json"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$port" "$target" 'bash -s' <<'REMOTE'
           set -euo pipefail
           data=/home/ubuntu/agent-data
@@ -86,6 +133,74 @@ jobs:
           print("issue_intake_accepted="+str(sum(x.get("status")=="accepted" for x in data)))
           print("issue_intake_rejected="+str(sum(x.get("status")=="skipped" for x in data)))
           print("issue_intake_already_terminal="+str(sum(x.get("status")=="already_terminal" for x in data)))
+          PY
+          # Optional deployment-aware read-only check. Do not run uninstalled PR code on Oracle.
+          # Source CI alone does not imply the installed Core runtime has this utility.
+          if test -f "$release/scripts/issue_completion_reconciliation.py"; then
+            set +e
+            /usr/bin/python3 "$release/scripts/issue_completion_reconciliation.py" \
+              --issues-json "$data/governance/issue-intake/latest-issue-closure-states.json" \
+              --work-items-json "$data/governance/work-items.json" \
+              > "$data/governance/issue-intake/last-closure-audit.json"
+            audit_code=$?
+            set -e
+            # Exit 2 is a legitimate observed anomaly; other failures must not be silently ignored.
+            if test "$audit_code" -ne 0 && test "$audit_code" -ne 2; then
+              echo "closure_audit_status=ERROR"
+              exit "$audit_code"
+            fi
+            /usr/bin/python3 - "$data/governance/issue-intake/last-closure-audit.json" <<'PY'
+          import json,sys
+          result=json.load(open(sys.argv[1],encoding="utf-8"))
+          if result.get("schema")!="agentos.issue-completion-reconciliation/v1":
+              raise SystemExit("closure_audit_schema_invalid")
+          rows=result.get("findings")
+          if not isinstance(rows,list):
+              raise SystemExit("closure_audit_findings_invalid")
+          number=result.get("closed_without_verified_done")
+          if type(number) is not int or number<0:
+              raise SystemExit("closure_audit_count_invalid")
+          print("closure_audit_status="+("ANOMALY" if number else "CLEAR"))
+          print("closure_audit_findings="+str(len(rows)))
+          print("closure_audit_unverified_closures="+str(number))
+          PY
+          else
+            echo "closure_audit_status=NOT_DEPLOYED"
+          fi
+          # Issue #2297 engineering intake readback: data-only, zero new dispatch.
+          # Keep its status distinct from the legacy #2134 assignment.
+          /usr/bin/python3 - "$data/governance/work-items.json" "$data/governance/issue-intake/last-sync-result.json" <<'PY'
+          import json,re,sys
+          ledger=json.load(open(sys.argv[1],encoding="utf-8")).get("items",{})
+          rows=json.load(open(sys.argv[2],encoding="utf-8"))
+          work_id="gh-issue-2297-engineering"
+          item=ledger.get(work_id) or {}
+          selected=[row for row in rows if isinstance(row,dict)
+                    and (row.get("work_id")==work_id or row.get("number")==2297)]
+          statuses={"accepted","in_progress","waiting_external","blocked","verifying","done","cancelled","failed","already_terminal","skipped"}
+          intake_status=next((row.get("status") for row in selected
+                              if row.get("status") in statuses),"not_reported")
+          def safe(value, allowed, default):
+              return value if type(value) is str and value in allowed else default
+          status=safe(item.get("status"),
+                      {"accepted","in_progress","waiting_external","blocked","verifying","done","cancelled"},"unknown")
+          blocker=safe(item.get("last_blocker_kind"),
+                       {"NONE","HUMAN_AUTH","RUNTIME_HEALTH","PROVIDER_CAPACITY","VERIFICATION",
+                        "UNKNOWN","MARKET_DATA"},"UNKNOWN")
+          owner=item.get("owner")
+          if type(owner) is not str or re.fullmatch(r"role://[A-Za-z0-9._/-]{1,90}",owner) is None:
+              owner="unassigned"
+          verification=item.get("verification") or {}
+          evidence=item.get("evidence") or []
+          verified=(status=="done" and verification.get("status")=="passed"
+                    and isinstance(evidence,list) and len(evidence)>0)
+          print("wow_repo_split_intake_status="+intake_status)
+          print("wow_repo_split_work_item_present="+str(bool(item)).lower())
+          print("wow_repo_split_work_item_status="+status)
+          print("wow_repo_split_work_item_owner="+owner)
+          print("wow_repo_split_execution_authorized="+str(item.get("execution_authorized") is True).lower())
+          print("wow_repo_split_blocker_kind="+blocker)
+          print("wow_repo_split_verified_done="+str(verified).lower())
           PY
           # Read-only ledger summary: do not mistake admission for verified execution.
           /usr/bin/python3 - "$data/governance/work-items.json" <<'PY'

@@ -23,6 +23,7 @@ from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
+from .recon_web import render_recon_html, render_pantheon_html
 from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html, render_platform_review_html, render_platform_auth_gate_html, render_my_one_html
 from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 from .account_realm_onboarding import account_request
@@ -522,6 +523,22 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             return
+        if path in ("/recon", "/recon/"):
+            data = render_recon_html().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return
+        if path in ("/pantheon", "/pantheon/"):
+            data = render_pantheon_html().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return
         self.send_response(405)
         self.end_headers()
 
@@ -533,6 +550,12 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             return
         if path in ("/welcome", "/welcome/"):
             self._html(200, render_welcome_html())
+            return
+        if path in ("/recon", "/recon/"):
+            self._html(200, render_recon_html())
+            return
+        if path in ("/pantheon", "/pantheon/"):
+            self._html(200, render_pantheon_html())
             return
         if len(parts) == 4 and parts[:2] == ["v1", "realms"] and parts[3] in {"health", "bootstrap", "tasks"}:
             query = parse_qs(urlparse(self.path).query)

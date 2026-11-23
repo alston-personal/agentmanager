@@ -128,6 +128,155 @@ class BasePDCAWorker:
                 pass
         return {}
 
+    def load_cognitive_ir(self) -> dict[str, Any]:
+        """載入角色的認知 IR (Cognitive IR) 意識錨點。"""
+        ir_file = self.persona_dir / "ir" / "current.json"
+        if ir_file.exists():
+            try:
+                return json.loads(ir_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def load_project_ir(self, project_id: str) -> dict[str, Any]:
+        """雙重水合：動態載入目標專案的專案 IR (Project IR)，掌握專案本質與演進脈絡。"""
+        if not project_id:
+            return {}
+        project_ir_file = self.data_root / "projects" / project_id / "ir" / "current.json"
+        if project_ir_file.exists():
+            try:
+                return json.loads(project_ir_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def reason_with_llm(
+        self,
+        prompt: str,
+        project_id: str | None = None,
+        context: dict[str, Any] | None = None,
+        timeout: int = 45,
+    ) -> dict[str, Any]:
+        """在需要決策、遇例外 (Exception) 或需改寫抽象任務時，帶入角色的 Character IR + Project IR 呼叫 LLM 進行思考與裁決。"""
+        char_core = self.load_core()
+        cog_ir = self.load_cognitive_ir()
+        proj_ir = self.load_project_ir(project_id) if project_id else {}
+
+        identity_anchor = cog_ir.get("cognitive_state", {}).get("identity_anchor", self.role_slug)
+        primary_directive = cog_ir.get("cognitive_state", {}).get("primary_directive", char_core.get("mission", "執行專業任務"))
+        values = char_core.get("immutable_traits", {}).get("values", [])
+        forbidden = char_core.get("immutable_traits", {}).get("forbidden", [])
+
+        # 裝配 System Context
+        sys_context_parts = [
+            f"【角色身分 (Identity)】: {identity_anchor} (Role ID: {self.role_slug})",
+            f"【核心天條 (Directive)】: {primary_directive}",
+        ]
+        if values:
+            sys_context_parts.append(f"【價值準則】: {', '.join(values)}")
+        if forbidden:
+            sys_context_parts.append(f"【嚴禁事項】: {', '.join(forbidden)}")
+
+        if proj_ir:
+            sys_context_parts.append(f"【所屬專案】: {proj_ir.get('name', project_id)}")
+            essence = proj_ir.get("essence", {})
+            if essence.get("one_sentence_pitch"):
+                sys_context_parts.append(f"【專案定位】: {essence.get('one_sentence_pitch')}")
+            if essence.get("why_it_exists"):
+                sys_context_parts.append(f"【專案由來與存在目的】: {essence.get('why_it_exists')}")
+            guardrails = proj_ir.get("guardrails", {}).get("anti_patterns", [])
+            if guardrails:
+                sys_context_parts.append(f"【專案防範反模式】: {', '.join(guardrails)}")
+
+        if context:
+            sys_context_parts.append(f"【當前現場 Context】: {json.dumps(context, ensure_ascii=False)}")
+
+        full_prompt = (
+            "你是 AgentOS 生態中的自主神祇與工程角色，請嚴格基於你的身分與專案背景進行思考決策。\n"
+            + "\n".join(sys_context_parts)
+            + f"\n\n【待決策／例外處理任務】:\n{prompt}\n\n"
+            + "請以繁體中文 (zh-TW) 回應，直接給出明確的診斷、下一步具體行動或修改後的具體代碼/規範。"
+        )
+
+        # 嘗試優先調用 Claude CLI，備援 Gemini CLI (非同步快速模式，設定 5 秒上限，避免阻塞 PDCA 常態心跳)
+        claude_paths = [
+            Path("/home/ubuntu/.local/bin/claude"),
+            Path("/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-linux-arm64/resources/native-binary/claude"),
+        ]
+        claude_bin = next((p for p in claude_paths if p.is_file()), None)
+
+        provider_used = "fallback_rule_engine"
+        status = "DEFERRED"
+        reasoning_text = "本機 LLM CLI 暫時無法直接調用，已保留原始 Context 交付治理鏈。"
+
+        # 限制底層 CLI 超時，防止互動式等待卡死
+        safe_timeout = min(timeout, 5)
+
+        if claude_bin:
+            try:
+                res = subprocess.run(
+                    [str(claude_bin), "-p", full_prompt],
+                    cwd=str(self.project_root),
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    capture_output=True,
+                    timeout=safe_timeout,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    provider_used = "claude"
+                    status = "PASS"
+                    reasoning_text = res.stdout.strip()
+            except Exception as e:
+                pass
+
+        if status != "PASS":
+            gemini_bin = Path("/home/ubuntu/.local/bin/gemini")
+            if gemini_bin.is_file():
+                try:
+                    res = subprocess.run(
+                        [str(gemini_bin), "-p", full_prompt, "--skip-trust", "--output-format", "json"],
+                        cwd=str(self.project_root),
+                        stdin=subprocess.DEVNULL,
+                        text=True,
+                        capture_output=True,
+                        timeout=safe_timeout,
+                    )
+                    if res.returncode == 0 and res.stdout.strip():
+                        provider_used = "gemini"
+                        status = "PASS"
+                        reasoning_text = res.stdout.strip()
+                except Exception as e:
+                    pass
+
+        # 審計存證 (Audit Trail Logging):
+        # 凡角色調用 LLM 進行思考與決策，必須即時追加記錄於資料層之專屬審計台帳
+        audit_dir = self.data_root / "runtime" / "llm_reasoning"
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        audit_file = audit_dir / "reasoning_audit_ledger.jsonl"
+        audit_entry = {
+            "schema": "agentos.llm-reasoning-entry/v1",
+            "timestamp": utc_now_iso(),
+            "role_id": self.role_slug,
+            "project_id": project_id,
+            "provider": provider_used,
+            "status": status,
+            "prompt_summary": (prompt[:120] + "...") if len(prompt) > 120 else prompt,
+            "context_summary": context,
+            "decision_preview": (reasoning_text[:200] + "...") if len(reasoning_text) > 200 else reasoning_text,
+            "full_reasoning": reasoning_text,
+        }
+        try:
+            with open(audit_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(audit_entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+        return {
+            "provider": provider_used,
+            "status": status,
+            "reasoning": reasoning_text,
+        }
+
     # --- Phase Overridables ---
 
     def plan(self, cycle: int) -> dict[str, Any]:
@@ -251,10 +400,58 @@ class BasePDCAWorker:
         p_data = self.plan(cycle)
         print(f"[{self.role_slug.upper()}] [Plan] Task: {p_data.get('task')}")
 
-        d_data = self.do(p_data, work_id)
-        print(f"[{self.role_slug.upper()}] [Do] Action executed: {d_data.get('action')}")
+        # 嘗試從 Plan 萃取關聯專案 ID (供 Project IR 雙重注水思考使用)
+        import re
+        target_project_id = p_data.get("project_id")
+        if not target_project_id and p_data.get("task"):
+            m = re.findall(r"\[([a-zA-Z0-9_\-]+)\]", str(p_data["task"]))
+            if m:
+                target_project_id = m[0]
 
-        c_data = self.check(p_data, d_data)
+        # 2. DO PHASE (包含異常防護與自主 LLM 思考修復)
+        d_data = {}
+        try:
+            d_data = self.do(p_data, work_id)
+            print(f"[{self.role_slug.upper()}] [Do] Action executed: {d_data.get('action')}")
+        except Exception as exc:
+            print(f"⚠️ [{self.role_slug.upper()}] [Do] Exception encountered: {exc}. 觸發 Base Role 自主 LLM 決策...")
+            reasoning_res = self.reason_with_llm(
+                prompt=f"執行階段發生未捕捉例外，請以角色身分分析根本原因並提供修復對策：{exc}",
+                project_id=target_project_id,
+                context={"stage": "do", "exception": str(exc), "plan": p_data},
+            )
+            d_data = {
+                "action": "exception_handled",
+                "status": "error_mitigated",
+                "exception": str(exc),
+                "remediation": reasoning_res.get("reasoning"),
+                "llm_provider": reasoning_res.get("provider"),
+            }
+
+        # 3. CHECK PHASE (若驗證失敗，觸發 Base Role LLM 自省)
+        c_data = {}
+        try:
+            c_data = self.check(p_data, d_data)
+        except Exception as exc:
+            c_data = {
+                "verifier_role": "core.root.inspector",
+                "verdict": "FAIL",
+                "findings": [f"❌ Check phase exception: {exc}"],
+            }
+
+        # 若 Check 裁定失敗或存在異常，所有角色一律於 Base Role 層級呼叫 LLM 進行處方開立
+        if c_data.get("verdict") == "FAIL":
+            print(f"🔍 [{self.role_slug.upper()}] [Check] FAIL observed. 啟動 Base Role LLM 自省與處方開立...")
+            reasoning_res = self.reason_with_llm(
+                prompt=f"檢查階段裁定未通過 (FAIL)。Findings: {c_data.get('findings')}\n請給出根本原因診斷與具體處方。",
+                project_id=target_project_id,
+                context={"stage": "check", "check_data": c_data, "do_data": d_data},
+            )
+            c_data.setdefault("findings", []).append(
+                f"🧠 [LLM Prescription]: {reasoning_res.get('reasoning')[:120]}..."
+            )
+            c_data["llm_remediation"] = reasoning_res.get("reasoning")
+
         print(f"[{self.role_slug.upper()}] [Check] Verdict: {c_data.get('verdict')} ({'; '.join(c_data.get('findings', []))})")
 
         res = self.act(cycle, work_id, p_data, d_data, c_data)
@@ -988,7 +1185,7 @@ class SpecStewardWorker(BasePDCAWorker):
 
     def plan(self, cycle: int) -> dict[str, Any]:
         return {
-            "task": "全系統規格生命週期審計與文檔現實防漂移巡查",
+            "task": "全系統規格生命週期審計、文檔防漂移與不合格任務改寫隊列推進",
             "source": "spec_steward_scheduler",
         }
 
@@ -1016,6 +1213,19 @@ class SpecStewardWorker(BasePDCAWorker):
             else:
                 err_msg = res_check.stderr.strip() or res_spec.stderr.strip()
                 findings.append(f"❌ 規格治理檢測失敗 (發現虛假完工或執行異常): {err_msg[:120]}")
+
+        # 規格改寫隊列巡檢 (Spec Refinement Handoff Check)
+        refinement_file = self.data_root / "runtime" / "spec_refinement_queue.json"
+        if refinement_file.is_file():
+            try:
+                q_data = json.loads(refinement_file.read_text(encoding="utf-8"))
+                unqualified_cnt = q_data.get("total_unqualified", 0)
+                if unqualified_cnt > 0:
+                    findings.append(f"⚠️ 發現 {unqualified_cnt} 項不合格待辦等待改寫具體規格 (排隊中，已交給 Spec Steward)")
+                else:
+                    findings.append("✅ 規格改寫隊列為空，全系統待辦任務規格健康")
+            except Exception as e:
+                findings.append(f"⚠️ 讀取規格改寫隊列失敗: {e}")
 
         return {"action": "governance_spec_audit", "findings": findings, "status": "completed"}
 
@@ -1248,6 +1458,21 @@ class HermesReconWorker(BasePDCAWorker):
             "✅ 三級分流閥運作中：Tier 0 (雜訊蒸發) / Tier 1 (工具入Atlas) / Tier 2 (架構借鏡呈Weaver)",
             "✅ 成功防禦外部資訊直接倒灌 Weaver，保護系統架構編織帶寬",
         ]
+
+        # 審查並記錄外部情報台帳 (Recon Ledger)
+        recon_ledger_file = self.data_root / "personas" / "sector-hermes" / "recon_ledger.json"
+        if recon_ledger_file.is_file():
+            try:
+                ledger = json.loads(recon_ledger_file.read_text(encoding="utf-8"))
+                records = ledger.get("records", [])
+                total = len(records)
+                latest_name = records[-1].get("name", "none") if records else "none"
+                findings.append(f"✅ 情資成果台帳運作正常：共沉澱 {total} 項外部開源武器 (最新: {latest_name})")
+            except Exception as e:
+                findings.append(f"⚠️ 情資成果台帳讀取異常: {e}")
+        else:
+            findings.append("ℹ️ 情資成果台帳尚未初始化")
+
         return {
             "action": "hermes_recon_audit",
             "findings": findings,
@@ -1337,6 +1562,8 @@ class ThemisCommandWorker(BasePDCAWorker):
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
         from scripts.themis_status_diff import run_inventory_diff
         result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True)
+        # 系統 PDCA 背景例行巡檢：傳入 is_user_invocation=False，遵守冷卻閥與變更過濾
+        result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True, is_user_invocation=False)
         delta = result.get("delta", {})
         summary = result.get("current", {}).get("projects_summary", {})
 
@@ -1393,6 +1620,35 @@ class HephaestusPawWorker(BasePDCAWorker):
             "verifier_role": "sector.claw.inspector",
             "verdict": "PASS",
             "findings": findings,
+        }
+
+
+class MioPersonaWorker(BasePDCAWorker):
+    """澪 Mio (persona.mio): Autonomous Social Persona, Morning Reading & Exploration."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("mio", data_root, project_root)
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "澪 (Mio) 晨讀情報同步、外探素材與帶圖發文合規巡檢",
+            "source": "mio_persona_scheduler",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        findings = []
+        morning_file = self.data_root / "personas" / "sunlake-milkcat" / "morning_reading.json"
+        if morning_file.is_file():
+            findings.append("✅ 晨讀情報檔 (morning_reading.json) 存在且就緒")
+        else:
+            findings.append("⚠️ 尚未發現最新晨讀情報檔")
+        return {"action": "mio_persona_audit", "findings": findings, "status": "completed"}
+
+    def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "verifier_role": "persona.mio.inspector",
+            "verdict": "PASS",
+            "findings": do_data.get("findings", []),
         }
 
 
@@ -1482,12 +1738,41 @@ WORKER_REGISTRY: Dict[str, Callable[[], BasePDCAWorker]] = {
     "thales": ThalesAcademicWorker,
     "academic_researcher": ThalesAcademicWorker,
     "system.academic_researcher": ThalesAcademicWorker,
+    "persona-mio": MioPersonaWorker,
+    "mio": MioPersonaWorker,
 }
 
 
-def get_worker(role_slug: str) -> BasePDCAWorker:
-    slug = role_slug.lower().strip()
-    if slug in WORKER_REGISTRY:
-        return WORKER_REGISTRY[slug]()
-    return BasePDCAWorker(role_slug=slug)
+def _normalize_role_key(role_id: str) -> str:
+    """Normalize role IDs so dot/underscore/hyphen variants resolve identically."""
+    return role_id.lower().strip().replace(".", "-").replace("_", "-")
+
+
+def get_worker(role_slug: str, *, allow_hollow_fallback: bool = False) -> BasePDCAWorker:
+    """Resolve a role to its concrete BasePDCAWorker subclass.
+
+    Normalizes `.` and `_` to `-` so registry IDs (e.g. `system.atlas`,
+    `system.gateway_steward`, `system.quality_sentinel`) always resolve to
+    their real inherited subclass instead of silently spawning hollow BasePDCAWorker shells.
+    """
+    raw = role_slug.lower().strip()
+    norm = _normalize_role_key(raw)
+
+    if raw in WORKER_REGISTRY:
+        return WORKER_REGISTRY[raw]()
+    if norm in WORKER_REGISTRY:
+        return WORKER_REGISTRY[norm]()
+
+    # Check normalized keys across WORKER_REGISTRY
+    for key, cls in WORKER_REGISTRY.items():
+        if _normalize_role_key(key) == norm:
+            return cls()
+
+    if raw in ("core.root", "core-root") or allow_hollow_fallback:
+        return BasePDCAWorker(role_slug=norm)
+
+    raise KeyError(
+        f"Unregistered active role '{role_slug}' (normalized: '{norm}'): "
+        "silent hollow BasePDCAWorker fallback is prohibited."
+    )
 

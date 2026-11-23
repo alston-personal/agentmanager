@@ -41,6 +41,8 @@ ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
 ACTION_DEPLOY_THREADS_GALAXY = "agentos.threads_galaxy_static.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
+ACTION_PROVISION_WOW_2297_REPOS = "agentos.repository.provision_wow_2297_repos"
+ACTION_PROVISION_WOW_2346_SUITE_REPO = "agentos.repository.provision_wow_2346_suite_repo"
 ACTION_PUBLISH_GALAXY_DAY1 = "agentos.social_threads_galaxy_day1.publish"
 ACTION_PUBLISH_MIO_DAY2 = "agentos.social_threads_mio_day2.publish"
 ACTION_PUBLISH_MIO_APPROVED = "agentos.social_threads_mio_approved.publish"
@@ -112,6 +114,8 @@ ALLOWED_ACTIONS = {
     ACTION_DEPLOY_THREADS_GALAXY,
     ACTION_RECONCILE_CONTROL_INBOX,
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
+    ACTION_PROVISION_WOW_2297_REPOS,
+    ACTION_PROVISION_WOW_2346_SUITE_REPO,
     ACTION_PUBLISH_GALAXY_DAY1,
     ACTION_PUBLISH_MIO_DAY2,
     ACTION_PUBLISH_MIO_APPROVED,
@@ -230,7 +234,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     elif action == ACTION_VISION_STUDIO_PRODUCE:
         allowed_params={"source_commit","project_id"}
     elif action == ACTION_COMMAND_INVOKE:
-        allowed_params={"source_commit","command","command_action"}
+        allowed_params={"source_commit","command","command_action","project"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
         allowed_params={"source_commit","job_type"}
     elif action == ACTION_EXECUTOR_JOB_INSPECT:
@@ -282,8 +286,15 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     if action == ACTION_COMMAND_INVOKE:
         command=str(params.get("command") or "")
         command_action=str(params.get("command_action") or "")
-        if command!="/status-diff" or command_action!="themis.inventory.diff":
+        if (command, command_action) not in {
+            ("/status-diff", "themis.inventory.diff"),
+            ("/project-diff", "themis.project.diff"),
+        }:
             raise ValueError("registered command is not authorized for this runtime action")
+        if command == "/project-diff":
+            project=str(params.get("project") or "").strip()
+            if project and not re.fullmatch(r"[a-z0-9][a-z0-9-_]{0,63}", project):
+                raise ValueError("invalid project name for /project-diff")
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -331,6 +342,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_DEPLOY_THREADS_GALAXY,
         ACTION_RECONCILE_CONTROL_INBOX,
         ACTION_PROVISION_ZIWEI_MASTER_REPO,
+        ACTION_PROVISION_WOW_2297_REPOS,
+        ACTION_PROVISION_WOW_2346_SUITE_REPO,
         ACTION_PUBLISH_GALAXY_DAY1,
         ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
         ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
@@ -1043,31 +1056,52 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         params=params or {}
         command=str(params.get("command") or "")
         command_action=str(params.get("command_action") or "")
-        if (command,command_action)!=("/status-diff","themis.inventory.diff"):
+        if (command, command_action) == ("/status-diff", "themis.inventory.diff"):
+            from scripts.themis_status_diff import run_inventory_diff
+            result,report=run_inventory_diff(save=True)
+            return {
+                "ok": True,
+                "source_commit": source_commit,
+                "command": command,
+                "action": command_action,
+                "receipt": {
+                    "schema":result["schema"],
+                    "steward":result["steward"],
+                    "projects_summary":result["current"]["projects_summary"],
+                    "git":result["current"]["git"],
+                    "atlas":result["current"]["atlas"],
+                    "delta":result["delta"],
+                    "report_markdown":report[:8000],
+                },
+                "steps":[{"step":"themis_status_diff","returncode":0,"stdout":"themis_status_diff=PASS\n","stderr":""}],
+            }
+        elif (command, command_action) == ("/project-diff", "themis.project.diff"):
+            from scripts.themis_project_diff import run_project_diff
+            project=str(params.get("project") or "").strip()
+            result,report=run_project_diff(project if project else None)
+            receipt = {
+                "schema": result["schema"],
+                "steward": result["steward"],
+                "report_markdown": report[:8000],
+            }
+            if "project" in result:
+                receipt["project"] = result["project"]
+                receipt["current"] = result.get("current")
+                receipt["delta"] = result.get("delta")
+            else:
+                receipt["summary"] = result.get("summary")
+                receipt["changed_projects"] = result.get("changed_projects")
+            return {
+                "ok": True,
+                "source_commit": source_commit,
+                "command": command,
+                "action": command_action,
+                "receipt": receipt,
+                "steps":[{"step":"themis_project_diff","returncode":0,"stdout":"themis_project_diff=PASS\n","stderr":""}],
+            }
+        else:
             raise ValueError("unregistered or unsupported command")
-        # The trusted runtime selects the installed Themis implementation;
-        # never use any caller-provided runner, path, node or shell string.
-        from scripts.themis_status_diff import run_inventory_diff
-        result,report=run_inventory_diff(save=True)
-        return {
-            "ok": True,
-            "source_commit": source_commit,
-            "command": command,
-            "action": command_action,
-            "receipt": {
-                "schema":result["schema"],
-                "steward":result["steward"],
-                "projects_summary":result["current"]["projects_summary"],
-                "git":result["current"]["git"],
-                "atlas":result["current"]["atlas"],
-                "delta":result["delta"],
-                "report_markdown":report[:8000],
-            },
-            "steps":[{"step":"themis_status_diff","returncode":0,"stdout":"themis_status_diff=PASS\\n","stderr":""}],
-        }
     if action == ACTION_GAIA_INTAKE_INSPECT:
-        # Read the installed, trusted runtime code. Do NOT execute a script
-        # fetched from caller-controlled source_commit for an inspection action.
         from scripts.gaia_proposal_intake import examine
         outcome = examine({
             "title": "Personal Device Secretary",
@@ -1241,6 +1275,10 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/deploy_threads_galaxy_static_user.sh", timeout=600, source_commit=source_commit)
     if action == ACTION_PROVISION_ZIWEI_MASTER_REPO:
         return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_PROVISION_WOW_2297_REPOS:
+        return _run_canonical_script("scripts/provision_wow_2297_repos_user.sh", timeout=150, source_commit=source_commit)
+    if action == ACTION_PROVISION_WOW_2346_SUITE_REPO:
+        return _run_canonical_script("scripts/provision_wow_2346_suite_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PUBLISH_GALAXY_DAY1:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PROBE_MIO_IMAGE_CONTAINER:

@@ -1,0 +1,111 @@
+{
+  "schema": "agentos.single-publisher-authority-gap-review/v1",
+  "status": "design-review-pending-not-production_authorization",
+  "date": "2026-11-22",
+  "source_baseline": "77138a48a2661cd4e46f15c605d1db010367bc1a",
+  "authority_chain": [
+    {
+      "stage": "approved release identity",
+      "required": "authenticated ONE release intent tied to repo, realm, target, operation, artifact digest, exact protected-main SHA, approver, time/expiry",
+      "current": "NOT_DEMONSTRATED",
+      "evidence": [
+        "agentos_node/action_relay.py:_claim_realm_fabric_deployment accepts desired_core_commit/lease_owner/expected_generation without approval receipt field",
+        "agent_core/runtime_converge_contract.py:ALLOWED_SOURCE_REFS={core/integration}"
+      ],
+      "effect_of_gap": "Valid Git SHA and owner label alone do not prove production approval"
+    },
+    {
+      "stage": "caller identity",
+      "required": "cryptographically authenticated / auditable operator and node identity at the ingress to every writer",
+      "current": "PARTIAL_UNVERIFIED",
+      "evidence": [
+        "Action Relay verifies Unix capsule owner and group but source says owner check not substitute for ONE authorization",
+        "Hosted SSH deploy and read-only audit reference the same deploy credential fallback names"
+      ],
+      "effect_of_gap": "The executor who can request or access a writer may differ from approver; actual OS privileges unknown"
+    },
+    {
+      "stage": "target-side fencing",
+      "required": "all physical git/systemd/unit/SQLite writes on each target reject stale generation/replay, including old-client writes",
+      "current": "REALM_PARTIAL_OTHERS_UNVERIFIED",
+      "evidence": [
+        "Realm _DEPLOYMENT_STATE and _DEPLOYMENT_LOCK guard claim/install_release",
+        "Core Bundle SSH converge mutates Core Worktree/systemd from GitHub sha without referencing Realm deployment lock",
+        "runtime_converge_action_relay.py separate checkout and rollback writer"
+      ],
+      "effect_of_gap": "Realm lease cannot be assumed to fence separate Core or Runtime writers"
+    },
+    {
+      "stage": "rollback and rescue",
+      "required": "atomic recovery of current symlink, unit files, effective process, capability marker, DB where relevant; rescue/normal alternate safely",
+      "current": "PARTIAL_HISTORY_NO_UNIFIED_LIVE_ACCEPTANCE",
+      "evidence": [
+        "Core Bundle has rollback trap and 2026-11-09 successful deployment log",
+        "Manual Safe Chronos rescue requires ubuntu owner and protected main",
+        "No current independent disaster injection receipt"
+      ],
+      "effect_of_gap": "Recovered Git checkout or claimed job PASS is not proof external effects were reversed"
+    },
+    {
+      "stage": "readback",
+      "required": "independent timestamped Oracle version/PID/service/permission attestation plus ONE receipt",
+      "current": "HISTORICAL_PARTIAL",
+      "evidence": [
+        "2026-11-22 05:05 Taiwan Teams-only immutable preflight 8/8",
+        "2026-11-15 Core audit 9 immutable/1 mutable, later Teams-only evidence supersedes only Teams",
+        "GitHub issue #470 oracle_runtime_verified is derived from job conclusion"
+      ],
+      "effect_of_gap": "Cannot claim current all-Core, Relay and Realm parity or verified ONE production authority"
+    }
+  ],
+  "concrete_source_code_hazards": [
+    {
+      "path": "agentos_node/action_relay.py:_install_realm_fabric_release",
+      "issue": "A canonical repo missing-.git early return occurs after locking _deployment_guard and before explicit close or an encompassing finally; other early returns inside with TemporaryDirectory similarly require resource-exit audit",
+      "risk": "May leave file descriptor/lock held longer than intended in long-lived process; effect and actual loaded revision unverified",
+      "disposition": "REVIEW_ONLY; do not patch before G2"
+    },
+    {
+      "path": ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml:converge",
+      "issue": "core/integration Push qualifies for direct SSH and physical service mutation; reads github.sha as desired release",
+      "risk": "Branch SHA source is not authenticated ONE release approval",
+      "disposition": "quarantine only after trusted provider-side/branch/rescue plan"
+    },
+    {
+      "path": "agent_core/runtime_converge_contract.py",
+      "issue": "Source allowlist retains core/integration",
+      "risk": "another ingress can accept non-main ancestry as target runtime source",
+      "disposition": "one migration plan with old-client compatibility"
+    }
+  ],
+  "acceptance_by_gate": [
+    {
+      "gate": "G0",
+      "pass": "Provider IDs/branch reachability + all write surfaces + Oracle live principal/loaded-version readback",
+      "current": "OPEN"
+    },
+    {
+      "gate": "G1",
+      "pass": "Signed/trusted approval issuer and consumer graph, explicit enforcement per target and rescue path independently reviewed",
+      "current": "DRAFT"
+    },
+    {
+      "gate": "G2",
+      "pass": "Reuse/retire table, phased fail-closed rollout, authorized owners, migration sequencing, tests and rollback fully reviewed",
+      "current": "NOT_ACCEPTED"
+    },
+    {
+      "gate": "G3+",
+      "pass": "Implementation only after G0-G2; real version/negative bypass/rollback receipts required",
+      "current": "BLOCKED"
+    }
+  ],
+  "do_not_do": [
+    "Do not build a duplicate SQLite release epoch authority beside the existing Realm state without explicit unified migration",
+    "Do not rely on textual lease_owner or branch ancestry as approval",
+    "Do not blindly disable 122 legacy push candidates or 463 provider-only identities",
+    "Do not use stale 2026-11-15 drift as evidence that Teams is currently mutable",
+    "Do not claim lack of read-only inspector: existing Oracle audit exists; authorization and current observation are separate"
+  ],
+  "no_live_mutation": true
+}

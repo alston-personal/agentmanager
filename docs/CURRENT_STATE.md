@@ -4,6 +4,247 @@ Added `.agent/skills/monthly_report` establishing a two-tier cross-node monthly 
 
 ---
 
+## 2026-11-20 — Universal Atlas Fork Snapshot in ONE MCP `resolve()` (`agentos_node/one_mcp.py`)
+
+1. **Cross-surface Atlas Avatar parity (Gemini, Codex, Claude Code, Web GPT)**:
+   - Added `_load_universal_atlas_avatar()` to `_project_resolve()` in `agentos_node/one_mcp.py` so every MCP caller (Antigravity, Claude Code, Codex CLI, Web GPT MCP) automatically receives `role_avatar` (`atlas_fork_readonly_snapshot` + `pitfalls_guardrails` + `experience_return_inbox`) alongside `canonical_ir`.
+   - Verified with `tests/test_one_mcp.py` and `tests/test_antigravity_one_hook.py` (18/18 PASS).
+
+---
+
+## 2026-11-20 — Atlas Fork-and-Return Experience Consolidation (`agent_core/atlas_inbox.py`)
+
+1. **Concurrency-safe Shadow-Clone memory model**:
+   - Upgraded `agentos_node/antigravity_one_hook.py` to hydrate each conversation as `atlas_fork_readonly_snapshot` with an append-only `experience_return_inbox` path, preventing multi-conversation lost updates.
+   - Implemented `agent_core/atlas_inbox.py` (`submit_experience_card`, `consolidate_atlas_inbox`) for append-only shard experience submission and single-writer deduplicated consolidation into Atlas core memory.
+   - Verified with `tests/test_atlas_inbox.py` and `tests/test_antigravity_one_hook.py` (11/11 PASS).
+
+---
+
+## 2026-11-20 — Fail-closed role inheritance resolution (anti-hollow-fallback)
+
+1. **Normalized role resolution & Fail-Closed guard**:
+   - Hardened `get_worker()` in `agent_core/base_pdca.py` to normalize `.` / `_` / `-` role IDs so `system.atlas`, `system.gateway_steward`, and `system.quality_sentinel` resolve directly to their real inherited subclasses (`AtlasClosureWorker`, `GatewayStewardWorker`, `CerberusSentinelWorker`) instead of silently spawning hollow `BasePDCAWorker` shells.
+   - Prohibited silent hollow fallback for unregistered active roles (raises `KeyError` unless `core.root` or explicitly opted-in).
+   - Added concrete `MioPersonaWorker` (`persona.mio`) so all 23 active registry roles resolve to real implementations with 0 hollow fallbacks.
+
+---
+
+## 2026-11-20 — Atlas Avatar (分靈體) PreInvocation Soul Hydration
+
+1. **Unified Task IR + Atlas Role Soul hydration**:
+   - Enhanced `agentos_node/antigravity_one_hook.py` (`_load_atlas_avatar`) so every fresh conversation hydrated by ONE PreInvocation automatically receives both `canonical_ir` and `role_avatar` (`system.atlas` identity, mission, `pitfalls_guardrails.md`, governance index path, and self-awakening distillation rule).
+   - Verified with `tests/test_antigravity_one_hook.py` (10/10 PASS).
+
+---
+
+## 2026-11-20 — Multi-Layer Abstract Role Hierarchy (`agent_core/roles/abstract_bases.py`)
+
+1. **Software engineering & leaf-only execution architecture**:
+   - Introduced `agent_core/roles/abstract_bases.py` implementing a strict multi-layer `abc.ABC` hierarchy: `BaseRoleWorker` -> domain abstract bases (`GovernanceRoleBase`, `SystemInfraRoleBase`, `SectorExecutorBase`, `ProductCreatorBase`) -> concrete leaf workers.
+   - Enforces Dependency Injection (`RoleContext`), explicit typed PDCA contracts (`PlanSpec`, `DoOutput`, `CheckVerdict`), `__init_subclass__` leaf-only auto-registration (`inspect.isabstract` guard), and fail-closed `resolve_leaf()` lookup.
+   - Verified with `tests/test_role_abstract_hierarchy.py` (4/4 PASS).
+
+---
+
+## 2026-11-20 — GOV-2026-11-20-001 Edge Node Read-Only Data Mirror Constitution (`edge_node_readonly_data_mirror`)
+
+1. **Constitutional principle & decision record**:
+   - Enshrined `edge_node_readonly_data_mirror` (`level: immutable`) in `.agent/CONSTITUTION.yaml` and documented `docs/governance/decisions/GOV-2026-11-20-001-edge-node-readonly-data-mirror.md`.
+   - Mandates CQRS read/write separation for all AgentOS edge nodes: local `agent-data` clones must operate strictly as read-only mirrors synchronized via one-way `git fetch` + `git reset --hard`, with local `git push` physically disabled (`DISABLED_READ_ONLY_MIRROR`). All mutations must write remotely to Oracle Core via `agentos-one` MCP or Control Plane APIs.
+2. **Executable enforcement & unit tests**:
+   - Implemented `agentos_node/data_mirror.py` (`ensure_readonly_push_lock`, `verify_readonly_mirror`, `sync_readonly_mirror`).
+   - Verified with unit tests in `tests/test_edge_data_mirror.py` (3/3 PASS).
+
+---
+
+## 2026-11-19 — #2198 AgentOS welcome navigation: source fix awaiting Oracle/browser verification
+
+- **Confirmed cause:** the `/welcome` primary `我的 AgentOS` link and shared account header both pointed back to `/welcome`, making an authenticated platform admin's click appear inert. This is a UI routing defect, not evidence of a failed OAuth login or deployed-version regression.
+- **Implemented in PR #2356 (source candidate):** `agent_core/companion_web.py` renders the welcome primary navigation as a current-page indicator; after authenticated Session, its account header links to `/platform` for platform admins, and to `/my-one` only after the user's own Realm onboarding status reports `realm_initialized`. Before authorization, it offers no misleading workspace link. Backend `/platform` and `/my-one` remain independently role/membership gated.
+- **Verified:** source path and regression tests added. **Not yet verified:** accepted Oracle deployment SHA; actual signed-in `register@milkcat.org` click-through; Realm Owner visit; cross-tenant denial; user Windows Node enrollment and WoW Bridge. This change must not be reported as a production fix or Suite completion until those receipts exist.
+
+---
+
+## 2026-11-19 — #2346 The Paw Auto-Remediation and Bounded LLM Escalation Circuit
+
+1. **Paw self-healing and missing module construction**:
+   - Upgraded `scripts/role_pdca_runner.py` Do phase: When an acceptance command fails due to missing modules or syntax errors, Paw automatically triggers `reason_with_llm` and detects missing targets (e.g. `Cannot find module`, `No such file`).
+   - Automatically constructs target test scaffolds (`.js`, `.ts`, `.py`) and performs an immediate in-cycle retry before conceding failure.
+   - Successfully verified on `[wde-p1-04]` constructing `web-duel-extension/tests/relay.test.js`.
+2. **Bounded CLI timeout guard in `BasePDCAWorker`**:
+   - Implemented a 5-second defensive timeout ceiling in `agent_core/base_pdca.py` when invoking local LLM CLIs during headless PDCA heartbeats, preventing unattended interactive prompt freezes.
+   - Captured audit traces in `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+
+---
+
+## 2026-11-19 — #2345 LLM Reasoning Audit Trail and Reasoning Monitor Viewer
+
+1. **LLM reasoning persistent audit ledger (`reasoning_audit_ledger.jsonl`)**:
+   - Upgraded `reason_with_llm` in `agent_core/base_pdca.py` to automatically append immutable audit records to `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+   - Every invocation captures timestamp, role identity, target project ID, driving model/provider (Claude/Gemini/Fallback), prompting summary, operational context, and full reasoning decision.
+2. **Dedicated CLI inspector (`scripts/reasoning_monitor.py`)**:
+   - Implemented `python3 scripts/reasoning_monitor.py [limit] [role]`: Enables operators to inspect exactly when any role invoked an LLM, what model was used, what diagnosis was produced, and what code/state changes were made.
+3. **Themis status-diff snapshot syntax fix**:
+   - Corrected indentation block in `scripts/themis_status_diff.py` snapshot saving routine.
+
+---
+
+## 2026-11-19 — #2344 BasePDCAWorker Dual-Hydration and Comprehensive Blocked Handoff
+
+1. **BasePDCAWorker Dual-Hydration & Exception LLM Escalation (`reason_with_llm`)**:
+   - Upgraded `agent_core/base_pdca.py` with `load_cognitive_ir()` (Character IR anchor) and `load_project_ir(project_id)` (Project IR dynamic hydration).
+   - Implemented `reason_with_llm()` on BasePDCAWorker: Automatically injects character identity, directive, values, and project essence into Claude/Gemini CLI when encountering exceptions or ambiguous tasks, replacing hardcoded failure drops.
+2. **Comprehensive blocked task handoff (`aggregate_tasks.py`)**:
+   - Extended `scripts/aggregate_tasks.py` to capture legacy `[!]` blocked tasks across all projects, preventing historical verification failures from decaying as silent ghosts.
+   - Automatically enqueues both unqualified draft tasks (`AWAITING_REFINEMENT`) and blocked incidents (`BLOCKED_INCIDENT`) into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+3. **Security-audit port verification & project IR foundation**:
+   - Re-verified host port bindings with `ss -tulpn`, confirmed internal loopback isolation (ports 8090, 8085, 8765-8776), and marked 20 blocked port inspection items as closed with verification commands.
+   - Authored authoritative `agentos.project-ir/v1` specifications for `antigravity-duel-plugin` and `web-duel-extension`.
+
+---
+
+## 2026-11-19 — #2343 Task Specification Handoff Queue and Duel Tasks Concrete Breakdown
+
+1. **Unqualified task refinement handoff queue (資料流轉閉環)**:
+   - Upgraded `scripts/aggregate_tasks.py`: Unqualified tasks lacking verification commands are no longer simply abandoned in a dead-end blocked section. They are automatically routed into a structured handoff queue (`$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`) under the stewardship of `governance.spec_steward`.
+   - Enhanced `SpecStewardWorker` in `agent_core/base_pdca.py` to audit and consume the refinement queue during its governance PDCA cycles, upholding the constitutional invariant that data must either be fully processed or handed off to the next owner.
+2. **Antigravity Duel Plugin and Web Duel Extension task operationalization**:
+   - Resolved the long-standing blockage on multi-agent debate and duel projects (`antigravity-duel-plugin` and `web-duel-extension`).
+   - Aligned implemented test contracts with `STATUS.md` and decomposed remaining milestone goals into concrete executable verification micro-tasks (`test -f`, `npm test`, `node test`).
+   - Unlocked Priority 9 and Priority 7 pipelines for autonomous execution by The Paw.
+
+---
+
+## 2026-11-19 — #2354 Base Role universal LLM reasoning fallback & audit trail
+
+1. **Universal LLM reasoning integration in `BasePDCAWorker`**:
+   - Refactored `agent_core/base_pdca.py` so that all 22+ active roles inheriting from `BasePDCAWorker` automatically trigger bounded LLM decision-making (`reason_with_llm()`) during execution exceptions or validation failures (`FAIL`).
+   - Dual-hydrates Character Cognitive IR (`load_cognitive_ir`) and Target Project IR (`load_project_ir`) before reasoning to preserve role identity and project context.
+   - Enforces a bounded 5s execution timeout with non-blocking fallback to `fallback_rule_engine (DEFERRED)` to prevent crontab PDCA lockup.
+2. **Persistent reasoning audit trail & monitoring**:
+   - Added persistent logging to `$AGENT_DATA_ROOT/runtime/llm_reasoning/reasoning_audit_ledger.jsonl`.
+   - Created CLI monitor `scripts/reasoning_monitor.py` for reviewing real-time model invocations, decision previews, and role remediations.
+3. **Spec refinement queue integration for blocked tasks**:
+   - In `scripts/aggregate_tasks.py`, legacy `[!]` blocked tasks are routed as `BLOCKED_INCIDENT` into `$AGENT_DATA_ROOT/runtime/spec_refinement_queue.json`.
+   - Hardened `is_task_qualified()` regex to require explicit shell execution patterns with word boundaries, preventing freeform text with embedded tool names (e.g. `wow-nav-assist`) from falsely leaking into execution queues.
+   - `SpecStewardWorker` audits and claims blocked items for spec reconstruction instead of leaving them in dead-end queues.
+
+---
+
+## 2026-11-18 — #2342 Themis status-diff cooldown and user invocation separation
+
+1. **Snapshot cooldown guard & noise elimination**:
+   - Refactored `scripts/themis_status_diff.py` and `agent_core/base_pdca.py` with `should_persist_snapshot` cooldown check (minimum 6-hour interval unless material changes to Git SHA, project directory, or TODO items occur).
+   - Eliminated high-frequency disk writes and snapshot fragmentation during routine 10-minute PDCA sweeps.
+2. **User interactive invocation separation**:
+   - Differentiated user interactive command invocations from background sweeps.
+   - User queries record to `user_latest.json` and default to comparing against `start-of-day` or the previous user checkpoint, preventing routine background sweeps from washing out user-visible deltas.
+   - Preserved unit test coverage in `tests/test_themis_status_diff.py`.
+3. **Historical snapshot pruning**:
+   - Safely pruned 170 redundant 10-minute snapshot files from `$AGENT_DATA_ROOT/snapshots/inventory/`, preserving key daily checkpoints.
+
+---
+
+## 2026-11-17 — #1682 Role task handoff bus with ACK handshake, priority queues, and dynamic registry-driven PDCA
+
+1. **Role task handoff bus with bidirectional ACK protocol**:
+   - Implemented `agent_core/role_handoff_bus.py` governing inter-role task handoffs (`agentos.role-task-handoff/v1`).
+   - Supports 4-stage lifecycle: `DISPATCHED -> ACKNOWLEDGED -> IN_PROGRESS -> COMPLETED`.
+   - Upper hand dispatches task payload with priority weight (P0 > P1 > ... > P9); downstream role acknowledges upon waking and queues tasks into a prioritized local queue (`get_prioritized_queue_for_role`).
+   - Covered by unit tests in `tests/test_role_handoff_bus.py`.
+2. **Dynamic registry-driven PDCA execution (Base Role compliance)**:
+   - Refactored `scripts/role_pdca_runner.py --role all` to dynamically discover active roles from `.agent/roles/registry.yaml`.
+   - Eliminated hardcoded role arrays; any newly approved role inheriting from `core.root` automatically joins the PDCA heartbeat loop and processes handoff ACKs without manual crontab edits.
+
+---
+
+## 2026-11-17 — #1682 Universal Role PDCA Runner ecosystem expansion and 23-role awakening
+
+1. **Ecosystem-wide PDCA execution expansion**:
+   - Expanded `scripts/role_pdca_runner.py --role all` to run all 22 active guardian and project roles (including Venus, Themis, Gateway Steward, DNS Steward, Port Steward, Weaver, Whisperer, Zeus Writer, YouTube Manager, Spec Steward, Constitution Keeper, Cartographer, Memory Archivist, Academic Researcher, Chronicler, Role Steward, Cangxuan, and Geek).
+   - Awakened all 16 previously dormant roles (cycles had been stalled at Cycle 2 for 8–11 days) into continuous 10-minute crontab cadence, restoring live heartbeat parity across all 23 roles in `system_quality_sentinel.py`.
+2. **Mio persistent browser session diagnostics**:
+   - Diagnosed Mio Threads browser supervisor returning `LOGIN_REQUIRED`, identifying the root cause of blocked Threads external exploration and bare-text posts.
+
+---
+
+## 2026-11-17 — #1682 System Quality Sentinel pantheon vital signs audit and role capabilities E2E testing
+
+1. **Pantheon vital signs and stagnation guard**:
+   - Implemented `check_pantheon_vital_signs()` in `scripts/system_quality_sentinel.py`, scanning all 23 active roles against their canonical persona directories and `pdca/state.json`.
+   - Flags missing persona directories, missing PDCA state files, and roles stagnant without heartbeat (>48 hours), eliminating the blind spot where dormant roles went untested.
+2. **Mio exploration and image posting compliance guard**:
+   - Implemented `check_mio_exploration_and_posts()` in `scripts/system_quality_sentinel.py`, checking external intelligence candidate feeds and enforcing that all approved outbound social posts strictly require image manifests (`.json`) alongside `.txt` to prevent bare-text posting.
+   - Bootstrapped canonical `pdca/state.json` for `persona.mio` and `core.root`.
+3. **Role capabilities E2E functional test harness**:
+   - Created `tests/test_role_capabilities_e2e.py` verifying real execution capabilities across Mio (persona pipeline & image contract), Venus (Taste Skill primary binding & aesthetic governance), and Themis (dual-mode project diff reporting).
+
+---
+
+## 2026-11-17 — #1682 Venus aesthetic director empowerment with Taste Skill and multi-perspective Social Galaxy
+
+1. **Venus Aesthetic Director primary skill binding**: Formally bound `design-taste-frontend` (Taste Skill 2.5.1, anti-AI-slop standard) as the primary governance skill of `system.aesthetic_director_venus` in `.agent/roles/registry.yaml` and `.agent/roles/instances/aesthetic_director_venus.md`. Venus is empowered to enforce equal edges, plain copy, craft terminal aesthetics, and zero dead-end navigation across all ecosystem web surfaces.
+2. **Multi-perspective Social Galaxy upgrade**: Refactored `social-galaxy-element.js` and `/social-galaxy/index.html` to provide:
+   - Three interactive view modes: Galaxy Orbit (planetary radial view), Activity Bubbles (clustering by platform engagement), and Identity Mesh Network (cross-platform entity correlation topology with link labels).
+   - Dynamic slide-out detail drawer displaying aligned social accounts (Threads, X, Bluesky, Matters) and 6-axis social radar indices (Reach, Intimacy, Authority, Diversity, Resonance, Velocity).
+   - Bidirectional navigation bar providing single-click returns to Studio and links to AgentOS Pantheon and Recon, eliminating dead-end routing.
+3. **Cross-site navigation audit**: Crawled and validated 40 endpoints across `agentos.milkcat.org` and `studio.milkcat.org`, confirming resolution of SPA fallback traps and dead-end routes.
+
+---
+
+## 2026-11-17 — #1682 Hermes Recon Ledger ingestion, Pantheon live telemetry, and Taste Skill anti-slop alignment
+
+1. **Hermes Recon Ledger data key normalization**: Corrected `get_recon_ledger_data()` in `agent_core/recon_web.py` to recognize both `"records"` (canonical in `personas/sector-hermes/recon_ledger.json`) and `"ingested_weapons"`, surfacing all discovered external weapon entries (e.g. `taste-skill`) with stars, tier, category, and output skill paths.
+2. **Pantheon live telemetry & recent activity history**: Upgraded `/pantheon` from static role cards to live operational telemetry cards powered by `$AGENT_DATA_ROOT/personas/<slug>/pdca/state.json`. Surfaces live cycle counts, running status, current/in-progress task, and the last 5 executed PDCA task items with verdict badges (`[PASS]` / `[FAIL]`) and timestamps.
+3. **Taste Skill 2.5.1 front-end styling**: Refactored `/recon` and `/pantheon` visual layouts according to `design-taste-frontend` rules: equal edges, high-contrast monospace typography, craft terminal aesthetic, zero cheap gradients, and responsive data density.
+4. **Social Galaxy static distribution**: Fixed `/social-galaxy/` routing on `studio.milkcat.org` by deploying web component and demo bundle into the active web build distribution.
+
+---
+
+## 2026-11-17 — #1682 Paw constructive execution closure and Cerberus pipeline liveliness sentinel
+
+Investigation revealed two failure modes in autonomous role progression:
+1. **Paw constructive execution gap**: The Paw's DO phase previously executed verification commands directly without constructing missing target artifacts (e.g. running `test -f <file>` before the file exists, triggering guaranteed failures and demoting qualified tasks to blocked queues). In addition, remote-only node projects (marked with `Target Node`) blocked the Oracle-local queue.
+2. **Sentinel liveliness blind spot**: Cerberus previously checked static assets (novels, translations, ghost projects, Venus UI), but lacked pipeline stagnation detection, masking situations where open tasks existed but all workers remained idle.
+
+This change:
+- Adds target artifact initialization under `CONSTRUCT PHASE` in `scripts/role_pdca_runner.py` prior to running verification commands, and filters out remote-only projects on Oracle local runners.
+- Syncs verified task completion (`- [x]`) back to both `GLOBAL_TODO_LIST.md` and the project's canonical `STATUS.md`.
+- Implements `check_pipeline_liveliness_and_anti_stagnation()` in `scripts/system_quality_sentinel.py`, raising `PIPELINE_STAGNATED` alerts when open tasks exist but all executors remain in continuous idle loops.
+
+---
+
+## 2026-11-16 — #1682 completion_watchdog_tick standalone sys.path resolution
+
+`scripts/completion_watchdog_tick.py` imported `approved_wow_paw_handoff`, which in turn imports `agent_core`. When executed directly without an explicit `PYTHONPATH=.`, Python raised `ModuleNotFoundError: No module named 'agent_core'`.
+
+This fix automatically resolves `_REPO_ROOT = Path(__file__).resolve().parent.parent` and injects it into `sys.path` before importing sibling modules, enabling reliable standalone CLI invocation and systemd tick execution.
+
+---
+
+## 2026-11-16 — #1682 Hermes Recon Ledger and Themis status-diff intelligence reporting
+
+Hermes (`sector.hermes`) acts as the technology scout responsible for external reconnaissance and three-tier filtering (Tier 0 vaporize noise, Tier 1 store tools into Atlas knowledge, Tier 2 forward RFCs to Weaver). Previously, Hermes executed static heartbeat passes without persisting structured reconnaissance logs or reporting ingested external capabilities in status diffs.
+
+This change introduces:
+1. `recon_ledger.json` tracking under `$AGENT_DATA_ROOT/personas/sector-hermes/recon_ledger.json` (`agentos.hermes-recon-ledger/v1`), recording discovered repositories, star metrics, tiers, categories, knowledge writeups, and ingested skill paths (e.g. `Leonxlnx/taste-skill`).
+2. Auditing of `recon_ledger.json` in `HermesReconWorker.do()` in `agent_core/base_pdca.py`, linking periodic PDCA execution to actual intelligence ingestion.
+3. Reporting of Hermes intelligence outputs in `scripts/themis_status_diff.py` under the `Roles & Executors` section (`情資成果: 共引進 N 項武器 (最新: ...)`).
+4. Project-level temporal delta diff command `/project-diff` (`themis.project.diff`)
+5. Hermes Tech Recon Radar (`/recon`) and System Pantheon (`/pantheon`) routes integrated into `agent_core/distributed_gateway.py` via `agent_core/recon_web.py`, adhering to design-taste-frontend standards.
+6. Social Relationship Galaxy Web Component `<social-galaxy>` independently packaged and demoed at `/social-galaxy/` in `zeus-writer/website/public/social-galaxy-element.js` closing task-galaxy-04. supporting dual-mode invocation: omitting project name outputs a concise ecosystem-wide status delta across all islands (`run_all_projects_summary_diff`), while specifying a project displays deep artifact, milestone audit, and project mission / architecture contract alignment (`extract_project_mission`). Registered in `.agentos/commands/project-diff.json`, authorized in `agentos_node/bootstrap_control.py`, and verified in `tests/test_agentos_command_intent.py`.
+
+---
+
+## 2026-11-16 — #1682 Themis status-diff executor role awareness (The Paw / Claw / Hermes / Atlas)
+
+The existing `scripts/themis_status_diff.py` reported inventory deltas (projects, TODOs, Git SHA, and Atlas cycle), but did not surface the operational and PDCA cycle status of core executors (`The Paw`, `The Claw`, `Hermes`, `Atlas`). Operators running `/status-diff` could see macro TODO counts but lacked visibility into executor presence and current task actions.
+
+This change adds `get_roles_state(data_root)` to `scripts/themis_status_diff.py` and integrates section `## 🐾 3. 核心執行器與守護角色在席狀態 (Roles & Executors)` into the generated Markdown report. The status extraction reads directly from `$AGENT_DATA_ROOT/personas/<slug>/pdca/state.json`, reporting role active/running state, current PDCA cycle number, latest task name (truncated to 70 characters), and latest execution verdict (`[PASS]` / `[FAIL]`). Tests in `tests/test_themis_status_diff.py` cover role state rendering in the report.
+
+---
+
 ## 2026-11-15 — #470 / #1682 same-Node stale lease attempt fencing (PR #2310; source only)
 
 Existing DistributedControlPlane already owns SQLite-persisted IR tasks, unique idempotency keys, exclusive lease transactions, expiry requeue and target-node owner checks. The missing identity is the **individual lease attempt** when a worker restarts but retains the same Node ID. PR #2310 adds an in-place, default-zero SQLite `lease_epoch` migration (preserving prior task rows), increments it within each accepted lease transition, returns `leaseEpoch` in both exact and next-task lease contracts, and requires `lease_epoch` in DistributedGateway completion and ControlPlaneClient. Persisting a terminal result is now conditioned atomically on current owner, current epoch, active state and unexpired lease. Missing/old epoch is rejected rather than being inferred from node identity, task id or IR digest. Existing generic non-IR ControlPlane update behavior is unchanged.
@@ -768,7 +1009,16 @@ Oracle installation/readiness evidence remain required. Even a matched reference
 does not establish source eligibility, image-provider acceptance, visual-review
 quality, hosting or autonomous IMAGE publication/readback.
 
-### Mio wardrobe source inspection (source candidate)
+### Role task handoff bus with progress ticks, execution receipts, and declarative callbacks
+- **Declarative Handoff Callback**: `dispatch_task` supports optional `callback={"target_role": ..., "intent": ..., "context": ...}` declarations, preserving upstream session context across asynchronous boundaries.
+- **Progress Ticks & Real-time Inspection**: Runtime workers update intermediate execution status via `update_task_progress(task_id, stage, percent, message)`. Executors can inspect status at any time via `get_task_progress(task_id)`.
+- **Closed-Loop Execution Receipts**: `complete_handoff_task` attaches standard `agentos.execution-receipt/v1` and automatically dispatches a reverse callback task to the originating executor's priority inbox upon finalization. Fully covered by `tests/test_role_handoff_bus.py`.
+
+### Mio lifestyle intelligence, authentic life micro-events and session keeper
+- **Threads authenticated session keeper**: Implemented `scripts/mio_threads_session_keeper.py` and persistent sealed vault at `agent-data/secrets/mio-threads-session/cookies.json` with automatic keep-alive and restore capabilities.
+- **Trend Digest daily intelligence restored**: Configured automated crontab schedule (08:00 and 16:00) running `trend_digest/runner.py --all` into `morning_reading.json`.
+- **Authentic life events integration**: Integrated `agent-data/personas/sunlake-milkcat/life_events_pool.json` into `scripts/persona_post_intent_generator.py` via `read_life_event_context()`, empowering Mio to anchor posts and reflections in genuine daily micro-events (coffee, walks, seasonal wardrobe reflections).
+- **Flexible posting contract**: Sentinel upgraded to allow both pure text reflections and image-manifest posts, eliminating the artificial block on text-only community interactions.
 
 The existing media reviewer now adds a bounded, read-only `wardrobe.source.inspect`
 execution receipt to `pdca/media_readiness.json`. The deployment sets
@@ -1130,7 +1380,14 @@ scoped `ir.advance` endpoint guarded by `observed_index_id`/`observed_ir_id`
 generation fencing (`409 stale_generation` on mismatch), resolving the governance
 directory relative to the active `data_root` and returning an
 `agentos.ir-writeback-receipt/v1` receipt after `advance_canonical_ir` +
-`activate_continuation`.
+`activate_continuation`. `agent_core/canonical_ir_handoff.py` (`advance_canonical_ir`)
+enforces bounded rolling windows (`decisions[-20:]`, `evidence[-12:]`, and
+`<= 480` chars per decision) so `latest.json` stays compact and lossless under
+`one_mcp._project_resolve`. `scripts/completion_watchdog_tick.py`
+(`consume_atlas_attention_queue`) consumes `atlas/attention_queue.json` into
+`atlas/triage_queue.json` (`agentos.atlas-triage/v1`) with `orphan_count=0`,
+routing items to `IN_COMPLETION_LEDGER`, `READY_FOR_INTAKE`, or
+`BLOCKED_NEEDS_HUMAN_TRIAGE` without inventing execution authority.
 still validates every write. See [Stop writeback compatibility](IR_STOP_WRITEBACK.md)
 for deployment dependencies, real temporary-store tests, and remaining session-binding
 limits. This does not repair the production active IR or claim platform deployment.
@@ -1464,7 +1721,7 @@ with CAS parent checks and atomic `active-continuation.json` activation.
 ### Themis Sacred Invocations & Temporal Inventory Diff Engine (2026-11-09)
 
 Consecrated **Themis 忒彌斯** (`governance.themis_command_steward`) as the Sacred Invocations and Slash Command Steward.
-Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_status_diff.py`) and command specification `.agentos/commands/status-diff.json`.
+Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_status_diff.py`) and command specification `.agentos/commands/status-diff.json`. `themis_status_diff.py` CLI fails closed (`NON_AUTHORITATIVE_DATA_ROOT`, exit `2`) when run against a non-Oracle `AGENT_DATA_ROOT` lacking `governance/directory.json` and documented projects.
 Features:
 - Scans full project island inventory (61+ projects, STATUS.md presence, Open/Closed/AC TODOs).
 - Persists historical snapshots in Data Layer (`$AGENT_DATA_ROOT/snapshots/inventory/`) preserving physical Logic/Data separation.
@@ -2158,3 +2415,60 @@ Existing `scripts/chronos.py` loads `schedule.yaml` once when its process begins
 Under a follow-up PR, retain the same **manual-only** Oracle Safe Transport Workflow but avoid scheduler injection entirely. It uses the already-authorized `ubuntu` SSH and exact current protected `main` SHA to extract the existing `scripts/repair_antigravity_relay_user.sh` from the Git object and execute it directly under the existing service owner. Before any mutation: confirm exact source SHA, existing rescue directory writability, exclusive `flock`, and no stale Chronos injection; fail closed if any are unknown. The existing repair script already contains its exact-source/experience predecessor/Realm isolation preflights and Action Relay install/rollback logic. Require both installer markers and a NEW live Action Relay `agentos.realm-fabric.deployment_status` receipt showing `installer_revision=realm-fabric-effective-unit-fence/v1`, without treating an installer printout as a terminal receipt.
 
 No new service, additional capability, auto Push, issue-comment trigger, sudo, or OIDC relaxation; existing safe/normal channels stay distinct. The workflow's historical name is retained to preserve navigation, but the actual operation no longer depends on Chronos polling. Merging the updated workflow does not launch rescue; a NEW `workflow_dispatch` must be independently authorized. Keep #1682 open pending the actual Relay, Realm, OIDC, Teams and Core 10/10 receipts.
+
+### Oracle Approved Issue Intake — #2297 bounded readback candidate (PR #2342, 2026-11-18)
+
+The pre-existing `.github/workflows/oracle-approved-issue-intake.yml` receives explicitly approved GitHub Issues through the established Oracle durable Ledger, with no additional execution authority. PR #2342 adds only a read-only, sanitized diagnostic for `gh-issue-2297-engineering` from the already-written `work-items.json` and `last-sync-result.json`. It prints bounded intake status, work-item presence/state, role owner, execution authorization, blocker class and whether terminal evidence verification passed. This is NOT a new queue, a new dispatcher, project registration, a GitHub repository creation operation, or proof that #2297 was executed. Existing #2134 diagnostics remain untouched.
+
+Until this PR is accepted and the next existing Oracle Intake run is examined, these fields are **source-only**, not live Oracle readback. In particular, a recent existing run scanned four approved issues and reported three admissions but did not identify whether #2297 was one of them. The WoW Companion suite remains held in draft PR #2339, while dedicated `wow-agentos-addon` and `wow-nav-assist` repositories require separate authorized provisioning and actual project/Executor receipts under existing Issue #2297.
+
+
+### Oracle #2297 WorkItem readback — diagnostic correction (2026-11-18)
+
+The first scheduled Oracle Approved Issue Intake run after PR #2342 merged, [run 44214976813](https://github.com/alston-personal/agentmanager/actions/runs/44214976813), confirmed exact engineering intake **accepted**, WorkItem **present**, owner `role://completion.controller`, `execution_authorized=false`, `verified_done=false`. GitHub Actions masked part of literal issue ID 2297, making `wow_2297_*` appear as `wow_***97_*`. The initial status diagnostic also omitted the existing `accepted` and other canonical work-completion states, reporting `unknown` even though the intake returned `accepted`.
+
+This candidate correction prints the same data using a non-issue-number key prefix `wow_repo_split_*` and correctly whitelists `accepted`, `in_progress`, `waiting_external`, `blocked`, `verifying`, `done`, and `cancelled`. It does not modify the WorkItem, authorize an engineering Executor, bypass Supervisor, provision repositories, or assert any live client delivery. The durable issue intake still requires independently governed execution, and the old #2134 output remains separate.
+
+
+### Hosted CI isolation for Oracle-only CLAUDE.md link (2026-11-18)
+
+The tracked repository-root `CLAUDE.md` is a symlink to `/home/ubuntu/agent-data/templates/CLAUDE.md`, an Oracle-only path that is unavailable to GitHub-hosted runner workspaces. In `.github/workflows/core-social-runtime-guard.yml`, pytest previously failed during the initial root directory scan, before collecting the requested social tests, with `PermissionError: CLAUDE.md`. A narrowly scoped hosted-checkout preparation step checks that the exact tracked link is dangling and then unlinks **only the GitHub runner's local symlink**; the Oracle target, repository source, social runtime implementation and test assertions are unchanged. This is not a new deployment capability and is unrelated to the WoW repo provisioning logic; the independent WoW #2297 draft PR may be considered only after governance CI passes on its rebased source.
+
+### WoW #2297 — exact private repository provisioning candidate (2026-11-18)
+
+The approved WoW AddOn project split (#2297) is admitted to Oracle's durable engineering intake, but `gh-issue-2297-engineering` has `execution_authorized=false` by design and does **not** grant the Completion Controller or Lobster arbitrary GitHub execution. The preexisting Oracle `ubuntu` Bootstrap Control supports a fixed `ziwei-master` private repo action, while the existing Actions Workflow Dispatch and Executor Job registrations do not automatically authorize an arbitrary new repository.
+
+The proposed separate branch `feat/wow-2297-fixed-repo-provision` introduces the **specific fixed action** `agentos.repository.provision_wow_2297_repos` into the *same* Bootstrap owner, with no generic command/repo parameters. Its canonical script `scripts/provision_wow_2297_repos_user.sh` permits exactly `alston-personal/wow-agentos-addon` and `alston-personal/wow-nav-assist`, requires the ubuntu owner and existing personal `gh` authentication, reuses existing private repositories, rejects non-private or identity-mismatched outcomes, and independently reads back numeric remote repository IDs. The existing manual-only Oracle workflow `oracle-provision-ziwei-master-via-bootstrap.yml` gains a fixed `repository_group` choice (`ziwei-master` default or `wow-2297`) and is restricted to the authorized account actor and exact protected main source SHA, then awaits a separately validated `agentos.bootstrap-receipt/v1` for both repositories. There is no new Oracle self-hosted workflow window, push/schedule/comment trigger, or generic shell dispatch; ZiWei's fixed action remains supported as the default option.
+
+**Source-only proposal, not deployment**: acceptance requires completed PR CI + protected merge, readback that the installed Oracle Bootstrap actually includes the new exact action, the separately authorized manual dispatch, a successful owner-scoped receipt, and remote GitHub readback for both repository IDs. Project registry registration, transfer of Lua/TOC AddOn source from draft PR #2339, CI, Studio release, and real Windows/WoW acceptance remain separate pending gates. A repo-create receipt alone does not mark either project registered or deployed.
+
+
+### Branch safe synchronization checkpoint (2026-11-18; source-only candidate)
+
+The existing branch resume freshness guard and PR convergence audit now have a **decision-only** policy proposal at `scripts/branch_sync_policy.py`, tested by `tests/test_branch_sync_policy.py` within the existing Branch Convergence Path Audit. It classifies a trusted code Executor's current remote-main ancestry, saved work checkpoint, fenced lease, clean worktree, verified dependency overlap, relevant governance/security changes, and authoritative last-sync age. Results include `SAFE_SYNC_CANDIDATE`, `RECONCILE_REQUIRED`, `WAIT_FOR_SAFE_CHECKPOINT`, and `ESCALATE_STALE_BRANCH`. The 72-hour threshold is an initial **proposed review/escalation rule**, not a deployed Scheduler or mandatory merge timer. This code does not automatically fetch or merge, mutate shared worktrees, dispatch Executor actions, or write a ONE Receipt. Required future Supervisor hookup, isolated merge/test, atomic expected-HEAD/lease fencing and real concurrency evidence are specified in `docs/governance/branch-safe-sync-checkpoint.md`. Do not claim cross-Executor enforcement or real-world branch convergence until those are implemented and read back.
+
+### WoW #2297 fixed Bootstrap workflow preflight repair (2026-11-18)
+
+A direct read of the merged `oracle-provision-ziwei-master-via-bootstrap.yml` exposed a **real execution blocker** missed by previous source-token-only CI: its `SOURCE_COMMIT` SHA grep had an unterminated single quote and the request/receipt block was accidentally duplicated. Consequently the prior 14/14 checks on #2344 did not prove the actual Workflow Bash could run. The bounded repair in `fix/wow-2297-bootstrap-workflow-executable` restores an anchored full-40-hex SHA validation, moves the main-ref/source-head fence before any request write, and keeps **exactly one** request and one receipt verifier. It preserves the existing owner allowlist, two fixed WoW repo names, original ZiWei option and Oracle Bootstrap owner. `tests/test_wow_2297_provision_contract.py` now runs `bash -n` on the extracted real `run: |` payload, asserts one request/receipt and pre-submit source fence; token matching alone is insufficient. This is still source-only repair, not an actual Workflow dispatch, new repository, installed Bootstrap readback or ONE receipt.
+
+
+### Issue / WorkItem closure reconciliation (2026-11-18; Draft PR #2349)
+
+After Issue #2297 was observed closed despite its required WoW repos and ONE registration receipts being absent, the branch `fix/issue-completion-reconciliation-2297` introduces `scripts/issue_completion_reconciliation.py`, a **read-only source candidate**, plus `tests/test_issue_completion_reconciliation.py`. Given an explicit snapshot containing actual GitHub `open` and `closed` states and the durable AgentOS WorkItem ledger, it reports `CLOSED_WITHOUT_VERIFIED_DONE` for a closed Issue whose corresponding work item is active or whose claimed done state lacks nonempty evidence and passed verification. It does not infer closed from missing data in a partial Issue snapshot. Cancelled work requires reason review, not automatic reopening; verified done closed items are distinguished. There is **no** GitHub mutation, ONE advance, new workflow, running production monitor, or executor authorization in this change. The existing Oracle Approved Issue Intake still only fetches open approved Issues. Production wiring needs a separately reviewed complete snapshot and bounded audit-only integration. Original #2297 close actor/event remains unverified; this tool diagnoses state inconsistency, not historical attribution.
+
+
+### Issue closure audit intake integration (2026-11-18, source candidate)
+
+The existing `.github/workflows/oracle-approved-issue-intake.yml` has an opt-in-by-deployment read-only comparison extension in `feat/issue-close-reconciliation-intake-2297`: the ordinary intake still fetches only `open` approved Issues; a **separate**, paginated and bounded snapshot collects only issue numbers and explicit `open`/`closed` states for approved Issues, excluding PRs. It transfers data (never the GitHub token) to Oracle via the existing SSH channel, and calls `scripts/issue_completion_reconciliation.py` **only when that checker is present in the installed immutable Core release**. `CLOSED_WITHOUT_VERIFIED_DONE` is reported as an anomaly, not an automatic Issue reopening, ONE transition or executor grant. Unexpected checker errors are errors, while a missing checker reports `NOT_DEPLOYED`. Source-level CI tests validate shell syntax, pagination and policy; tests do not constitute live deployment or canonical Oracle Receipt. The query is scoped to approved-labeled issues: if an Issue loses that label, it is not discoverable through this snapshot; a later separately governed completeness enhancement may query the exact canonical WorkItem source URLs. No historical closer attribution is claimed.
+
+
+### WoW Suite independent repository Bootstrap candidate (#2346; 2026-11-18)
+
+The user explicitly requested the **third** dedicated GitHub repository `alston-personal/wow-companion-suite` and canonical AgentOS Project registration in addition to the two previously approved AddOn repositories. This source candidate adds a distinct, fixed-name, ubuntu-owned, private-only `agentos.repository.provision_wow_2346_suite_repo` action to the **existing** Oracle Bootstrap Control, with an independent exact `wow-2346` manual owner-scoped workflow selection. It uses the existing runner, mandatory current `main` SHA check, one request and one validated receipt; the existing `wow-2297` two-repo action is left unchanged. The provision script is fixed to a single repository name with readback of numeric GitHub ID, full name, privacy and `default_branch=main`, and does not accept arbitrary names or commands. Tests are exercised by the pre-existing WoW provisioning CI workflow.
+
+**Boundaries:** A merged GitHub workflow/Bootstrap source and CI are *not* evidence of installed Oracle Bootstrap version, authorized manual dispatch or repository creation. The third private repo has no verified existence, project.yaml, ONE Project registration, or source migration yet. Independent Project Registry collision check, actual authorized repository execution/readback, provenance-preserving migration of Suite-only files from the held PR #2339 and canonical ONE registration are separate gates. Never claim three managed AgentOS Projects before those receipts exist. Do not move shared Node/Realm/Bridge code to the Suite.
+
+
+### WoW Fixed Repository Bootstrap failure diagnostics (2026-11-20; PR #2363)
+
+Two authorized manual `workflow_dispatch` runs from protected `main` (`44712675205` for `wow-2297`, `44712701517` for `wow-2346`) both failed at the strict receipt `source_commit` equality assertion. The fetched job logs do not reveal whether the receipt source was missing or mismatched, whether the handler reported its own failure, or which Oracle handler revision produced it; neither run provides repository-provision acceptance. This scoped workflow candidate adds metadata-only log fields `bootstrap_receipt_source_state` (`MATCH`/`MISSING`/`MISMATCH`), `bootstrap_receipt_action_match`, `bootstrap_receipt_executor_match`, `bootstrap_receipt_ok`, and a fixed-allowlist error class. The workflow must never print full Bootstrap receipts, command output, arbitrary exception strings, credentials or tokens. It retains exact current-main SHA fence, schema/action/uid/ok assertions, fixed repository identities, private/main requirement and numeric repository-ID checks. These diagnostics do **not** repair an installed Oracle handler or grant dispatch authority; use only the existing operator-controlled flow and real Oracle source/receipt attestation before retry or declaring successful provisioning.

@@ -1,7 +1,17 @@
-name: Oracle Provision ZiWei Master via Bootstrap Control
+name: Oracle Fixed Repository Provision via Bootstrap Control
 
 on:
   workflow_dispatch:
+    inputs:
+      repository_group:
+        description: Fixed repository group for the existing Oracle Bootstrap owner
+        type: choice
+        required: true
+        default: ziwei-master
+        options:
+          - ziwei-master
+          - wow-2297
+          - wow-2346
 permissions:
   contents: read
 
@@ -10,31 +20,53 @@ jobs:
     if: github.actor == 'alstonhuang'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
+    env:
+      REPOSITORY_GROUP: ${{ inputs.repository_group }}
     steps:
       - uses: actions/checkout@v4
-      - name: Submit fixed ZiWei repository provisioning action to ubuntu bootstrap control
+      - name: Submit approved fixed repository provision action to ubuntu bootstrap control
         shell: bash
         run: |
           set -euo pipefail
           ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="ziwei-repo-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Never infer an action from a caller-provided repository name.
+          case "$REPOSITORY_GROUP" in
+            ziwei-master)
+              ACTION=agentos.repository.provision_ziwei_master
+              SOURCE_REF=core/integration
+              ;;
+            wow-2297)
+              ACTION=agentos.repository.provision_wow_2297_repos
+              SOURCE_REF=main
+              ;;
+            wow-2346)
+              ACTION=agentos.repository.provision_wow_2346_suite_repo
+              SOURCE_REF=main
+              ;;
+            *) echo 'error=unsupported_repository_group' >&2; exit 2 ;;
+          esac
+          REQUEST_ID="fixed-repo-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           REQUEST="$REQUESTS/$REQUEST_ID.request.json"
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-          SOURCE_COMMIT=$(git ls-remote origin refs/heads/core/integration | awk '{print $1}')
-          printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+          SOURCE_COMMIT=$(git ls-remote origin "refs/heads/$SOURCE_REF" | awk '{print $1}')
+          printf '%s\n' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+          if [ "$REPOSITORY_GROUP" = wow-2297 ] || [ "$REPOSITORY_GROUP" = wow-2346 ]; then
+            test "$GITHUB_REF_NAME" = main || { echo 'error=main_ref_required' >&2; exit 2; }
+            test "$GITHUB_SHA" = "$SOURCE_COMMIT" || { echo 'error=stale_main_source' >&2; exit 2; }
+          fi
           for i in $(seq 1 60); do [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break; sleep 1; done
           test -d "$REQUESTS"; test -d "$RECEIPTS"
-          python3 - "$REQUEST" "$REQUEST_ID" "$SOURCE_COMMIT" <<'PY'
+          python3 - "$REQUEST" "$REQUEST_ID" "$SOURCE_COMMIT" "$ACTION" <<'PY'
           import json, os, sys
           from datetime import datetime, timezone
           from pathlib import Path
-          path=Path(sys.argv[1]); rid=sys.argv[2]; sha=sys.argv[3]
+          path=Path(sys.argv[1]); rid=sys.argv[2]; sha=sys.argv[3]; action=sys.argv[4]
           payload={
             'schema':'agentos.bootstrap-request/v1',
             'request_id':rid,
-            'action':'agentos.repository.provision_ziwei_master',
+            'action':action,
             'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
             'params':{'source_commit':sha},
             'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
@@ -45,19 +77,61 @@ jobs:
           PY
           for i in $(seq 1 120); do [ -f "$RECEIPT" ] && break; sleep 1; done
           test -f "$RECEIPT" || { echo 'ziwei_repo_receipt=TIMEOUT'; exit 3; }
-          python3 - "$RECEIPT" "$SOURCE_COMMIT" <<'PY'
+          python3 - "$RECEIPT" "$SOURCE_COMMIT" "$ACTION" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
-          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
-          assert r.get('action')=='agentos.repository.provision_ziwei_master',r
-          assert r.get('executor_user')=='ubuntu',r
-          assert r.get('executor_uid')==1001,r
-          assert r.get('source_commit')==expected,r
-          assert r.get('ok') is True,r
-          text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
-          assert 'repo=alston-personal/ziwei-master' in text,text[-10000:]
-          assert ('classification=CREATED_PRIVATE' in text or 'classification=ALREADY_EXISTS_PRIVATE' in text),text[-10000:]
-          print('ziwei_repo_provision=PASS')
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          expected=sys.argv[2]
+          action=sys.argv[3]
+          # Diagnostic metadata only: never print full receipt, stdout, stderr or credentials.
+          # A failed source attestation must remain a hard failure, not a fallback.
+          source=r.get('source_commit')
+          print('bootstrap_receipt_source_state='+(
+              'MATCH' if source==expected else
+              'MISSING' if source is None or source=='' else 'MISMATCH'))
+          print('bootstrap_receipt_action_match='+str(r.get('action')==action).lower())
+          print('bootstrap_receipt_executor_match='+str(
+              r.get('executor_user')=='ubuntu' and r.get('executor_uid')==1001).lower())
+          print('bootstrap_receipt_ok='+str(r.get('ok') is True).lower())
+          error=r.get('error')
+          if isinstance(error,str) and error:
+              error_kind=error.split(':',1)[0]
+              if error_kind in ('PermissionError','ValueError','RuntimeError',
+                                'FileNotFoundError','TimeoutExpired','OSError'):
+                  print('bootstrap_receipt_error_class='+error_kind)
+              else:
+                  print('bootstrap_receipt_error_class=OTHER')
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1'
+          assert r.get('action')==action
+          assert r.get('executor_user')=='ubuntu'
+          assert r.get('executor_uid')==1001
+          assert r.get('source_commit')==expected
+          assert r.get('ok') is True
+          lines=[]
+          for step in r.get('steps',[]):
+              lines.extend(str(step.get('stdout') or '').splitlines())
+          if action=='agentos.repository.provision_ziwei_master':
+              assert 'repo=alston-personal/ziwei-master' in lines
+              assert any(x in lines for x in ('classification=CREATED_PRIVATE','classification=ALREADY_EXISTS_PRIVATE'))
+              print('ziwei_repo_provision=PASS')
+          elif action=='agentos.repository.provision_wow_2297_repos':
+              assert 'wow_2297_repository_provision=PASS' in lines
+              assert 'repo=alston-personal/wow-agentos-addon' in lines
+              assert 'repo=alston-personal/wow-nav-assist' in lines
+              ids=[x.split('=',1)[1] for x in lines if x.startswith('repository_id=')]
+              assert len(ids)==2 and len(set(ids))==2 and all(x.isdecimal() for x in ids)
+              assert lines.count('private=true')==2
+              print('wow_2297_repo_provision=PASS')
+              print('repo_ids='+','.join(ids))
+          elif action=='agentos.repository.provision_wow_2346_suite_repo':
+              assert 'wow_2346_repository_provision=PASS' in lines
+              assert 'repo=alston-personal/wow-companion-suite' in lines
+              ids=[x.split('=',1)[1] for x in lines if x.startswith('repository_id=')]
+              assert len(ids)==1 and ids[0].isdecimal()
+              assert lines.count('private=true')==1
+              assert 'default_branch=main' in lines
+              print('wow_2346_repo_provision=PASS')
+              print('repo_id='+ids[0])
+          else:
+              raise AssertionError('unknown_bootstrap_action')
           print('source_commit='+expected)
-          print(text[-4000:])
           PY

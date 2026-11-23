@@ -60,10 +60,22 @@ class TestThemisStatusDiff(unittest.TestCase):
             "projects_summary": {"total_projects": 1, "total_open": 2, "total_closed": 1, "total_with_ac": 0},
             "projects": {},
             "atlas": {"latest_cycle": 10},
+            "roles": {
+                "the-paw": {
+                    "display_name": "The Paw (工匠貓爪)",
+                    "status": "RUNNING",
+                    "cycle": 100,
+                    "latest_task": "單元測試執行",
+                    "latest_verdict": "PASS",
+                }
+            },
         }
         delta = compute_delta(None, curr)
         self.assertFalse(delta["has_baseline"])
         self.assertIn("首次", delta["message"])
+        md = format_markdown_report(curr, delta)
+        self.assertIn("The Paw (工匠貓爪)", md)
+        self.assertIn("RUNNING", md)
 
     def test_compute_delta_with_progression(self):
         base = {
@@ -141,6 +153,42 @@ class TestThemisStatusDiff(unittest.TestCase):
         worker = get_worker("themis")
         self.assertIsInstance(worker, ThemisCommandWorker)
         self.assertEqual(worker.role_slug, "governance-themis-command-steward")
+
+    def test_cooldown_and_user_invocation_separation(self):
+        # 1. 初始背景盤點 (建立 initial baseline)
+        res1, md1 = run_inventory_diff(Path("."), self.mock_data, save=True, is_user_invocation=False)
+        self.assertTrue(res1["persistence"]["saved"])
+        self.assertEqual(res1["persistence"]["reason"], "INITIAL_BASELINE")
+
+        # 2. 短時間內再次背景盤點（無實質異動，應觸發冷卻閥跳過存檔）
+        res2, md2 = run_inventory_diff(Path("."), self.mock_data, save=True, is_user_invocation=False, cooldown_seconds=3600)
+        self.assertFalse(res2["persistence"]["saved"])
+        self.assertIn("COOLDOWN_ACTIVE", res2["persistence"]["reason"])
+
+        # 3. 使用者終端下指令（記錄至 user_latest，不污染系統 latest）
+        res3, md3 = run_inventory_diff(Path("."), self.mock_data, save=True, is_user_invocation=True)
+        self.assertTrue(res3["persistence"]["saved"])
+        self.assertEqual(res3["persistence"]["reason"], "USER_INVOCATION_RECORDED")
+        user_latest = self.mock_data / "snapshots" / "inventory" / "user_latest.json"
+        self.assertTrue(user_latest.is_file())
+
+    def test_cli_fails_closed_on_non_authoritative_data_root(self):
+        import os
+        import subprocess
+        import sys
+        for name in ("p1", "p2", "p3"):
+            (self.projects_dir / name).mkdir(exist_ok=True)
+        env = dict(os.environ)
+        env["AGENT_DATA_ROOT"] = str(self.mock_data)
+        proc = subprocess.run(
+            [sys.executable, "scripts/themis_status_diff.py", "--no-save", "--json"],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("NON_AUTHORITATIVE_DATA_ROOT", proc.stderr)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,18 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 - **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
 - **Production runtime truth is node-authoritative.** For runtime parity/health claims, consume the runtime node's `agentos.execution-receipt/v1`. A ChatGPT/container sandbox DNS or HTTP probe must never override or substitute for Oracle/runtime-node evidence. DNS failure, local-service failure, source mismatch, and public HTTP failure must remain distinguishable in the receipt.
 
+## Systemic Engineering First — High-Risk Change Preflight
+
+在變更 AgentOS 核心架構、Runtime、Executor、正式部署或治理權限前，**先盤點整體系統，再規劃，最後實作**。必須先確認既有能力、權限與資料流、所有相關副作用入口、已知及未知風險、完整修復計畫、回滾和驗收證據；不要因新發現一個局部問題便立即另建狀態機或繼續零碎修補。新發現的風險先回到整體模型重新審查。
+
+- 狹義、低風險、可逆的修正採輕量審查，不強迫進行整個系統的重盤點。
+- 高風險實作需以 **該 PR 中新增或更新的 preflight 紀錄**先完成盤點與獨立審查，再進入實作。
+- 每次「繼續」應延續目前治理階段，而非自動開始下一個程式修改。
+- 「程式存在／CI 成功／已部署／實機與對抗驗收完成」屬不同證據層級，不得互相替代。
+- CI 的紀錄格式檢查不能代替正式人工核准，也不能授予 ONE 或 Oracle 發布權限。
+
+規格：`docs/governance/decisions/GOV-2026-11-22-001-systemic-engineering-first.md`；檢查器：`scripts/systemic_engineering_preflight.py`。
+
 ## Protected Branch Authority Rule
 
 For `main`, `master`, and `release/*`:
@@ -63,6 +75,13 @@ python3 scripts/protected_branch_authority.py \
 The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL` and a non-zero exit status.
 
 Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See [`docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`](file:///home/ubuntu/agentmanager/docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md).
+
+## Traditional Chinese Mandate (正體/繁體中文鐵律)
+
+依據使用者最高指示與 `.agent/CONSTITUTION.yaml` 之 `traditional_chinese_mandate` 條款（`level: immutable`）：
+- **全系統所有輸出、對話回應、提示詞（System Prompts）、說明文件與代碼註解，嚴禁使用任何簡體中文**。
+- 所有 AI 代理（包括 Antigravity、Codex、Claude 等）回應一律嚴格使用**繁體中文（台灣習慣用語，zh-TW）**。
+- 違者視為嚴重違憲與治理失敗。
 
 ## Documentation Reality Rule (Atomic Doc-Code Parity)
 

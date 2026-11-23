@@ -190,6 +190,44 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
             tmp.unlink(missing_ok=True)
 
 
+def _load_atlas_avatar(data_root: Path) -> dict[str, Any]:
+    """Hydrate the Atlas Avatar (分靈體) soul: role identity, pitfalls guardrails, and governance index."""
+    atlas_dir = Path(data_root) / "personas" / "system-atlas"
+    pitfalls_file = atlas_dir / "pitfalls_guardrails.md"
+    core_file = atlas_dir / "character_core.json"
+
+    pitfalls_excerpt = ""
+    if pitfalls_file.is_file():
+        try:
+            pitfalls_excerpt = pitfalls_file.read_text(encoding="utf-8").strip()[:1600]
+        except Exception:
+            pitfalls_excerpt = ""
+
+    mission = "全系統閉環大總管 (Closure Owner)：盯緊所有對話、防孤兒任務、防空殼空轉，並將關鍵教訓提煉回記憶與決策點。"
+    if core_file.is_file():
+        try:
+            core_data = json.loads(core_file.read_text(encoding="utf-8"))
+            if core_data.get("mission"):
+                mission = str(core_data["mission"])
+        except Exception:
+            pass
+
+    return {
+        "role_id": "system.atlas",
+        "avatar_mode": "atlas_fork_readonly_snapshot",
+        "mission": mission,
+        "pitfalls_guardrails_path": str(pitfalls_file),
+        "pitfalls_guardrails": pitfalls_excerpt,
+        "experience_return_inbox": str(atlas_dir / "inbox"),
+        "governance_index_path": str(Path(data_root) / "knowledge" / "GOVERNANCE_INDEX.md"),
+        "self_awakening_rule": (
+            "本對話為 Atlas 唯讀分靈體 (Fork Snapshot)，禁止多對話直接覆寫本體記憶；"
+            "若發現新架構缺陷、用戶糾正或論文成長證據，請以 Append-Only 投遞卡片至 experience_return_inbox，"
+            "由 Atlas 本體統一去重回歸吸收。"
+        ),
+    }
+
+
 def build_injection(
     payload: dict[str, Any],
     gateway: OracleLocalGateway | None = None,
@@ -247,6 +285,10 @@ def build_injection(
         "executor_identity_source": "preinvocation-modelName",
         "model_name": payload.get("modelName"),
         "credential_exposed": False,
+        "role_avatar": _load_atlas_avatar(
+            getattr(one, "data_root", None)
+            or Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+        ),
         "canonical_ir": ir,
     }
     message = (

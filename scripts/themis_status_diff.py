@@ -16,6 +16,7 @@ import datetime
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -142,6 +143,68 @@ def get_atlas_state(data_root: Path) -> Dict[str, Any]:
     }
 
 
+def get_roles_state(data_root: Path) -> Dict[str, Any]:
+    """採集核心角色 (The Paw / The Claw / Hermes 等) 之 PDCA 狀態與最新活動。"""
+    personas_dir = data_root / "personas"
+    key_roles = [
+        ("the-paw", "The Paw (工匠貓爪)"),
+        ("the-claw", "The Claw (安全審查)"),
+        ("sector-hermes", "Hermes (技術偵察使)"),
+        ("system-atlas", "Atlas (守護神)"),
+    ]
+
+    roles_info: Dict[str, Any] = {}
+    for slug, display_name in key_roles:
+        state_file = personas_dir / slug / "pdca" / "state.json"
+        if not state_file.is_file():
+            roles_info[slug] = {
+                "display_name": display_name,
+                "status": "UNKNOWN",
+                "cycle": 0,
+                "latest_task": None,
+                "latest_verdict": None,
+                "last_tick_at": None,
+            }
+            continue
+
+        try:
+            st = json.loads(state_file.read_text(encoding="utf-8"))
+            activities = st.get("recent_activities", [])
+            latest_act = activities[0] if activities else {}
+            roles_info[slug] = {
+                "display_name": display_name,
+                "status": st.get("status", "ACTIVE"),
+                "cycle": st.get("cycle", 0),
+                "latest_task": latest_act.get("task"),
+                "latest_verdict": latest_act.get("verdict"),
+                "last_tick_at": st.get("last_tick_at"),
+            }
+
+            # 若為 Hermes，額外讀取情資成果台帳 (recon_ledger.json)
+            if slug == "sector-hermes":
+                recon_ledger_file = personas_dir / slug / "recon_ledger.json"
+                if recon_ledger_file.is_file():
+                    try:
+                        ledger_data = json.loads(recon_ledger_file.read_text(encoding="utf-8"))
+                        records = ledger_data.get("records", [])
+                        if records:
+                            latest_recon = records[-1]
+                            roles_info[slug]["recon_summary"] = (
+                                f"共引進 {len(records)} 項武器 (最新: {latest_recon.get('name')} ⭐{latest_recon.get('stars', 0)})"
+                            )
+                    except Exception:
+                        pass
+        except Exception as e:
+            roles_info[slug] = {
+                "display_name": display_name,
+                "status": "ERROR",
+                "cycle": 0,
+                "error": str(e),
+            }
+
+    return roles_info
+
+
 def capture_snapshot(project_root: Path = AGENTMANAGER_DEFAULT, data_root: Path = AGENT_DATA_DEFAULT) -> Dict[str, Any]:
     """採集當前全生態狀態快照。"""
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
@@ -150,6 +213,7 @@ def capture_snapshot(project_root: Path = AGENTMANAGER_DEFAULT, data_root: Path 
     git_info = get_git_info(project_root)
     project_map, summary = scan_projects(data_root)
     atlas_state = get_atlas_state(data_root)
+    roles_state = get_roles_state(data_root)
 
     snapshot = {
         "schema": "agentos.inventory-snapshot/v1",
@@ -159,6 +223,7 @@ def capture_snapshot(project_root: Path = AGENTMANAGER_DEFAULT, data_root: Path 
         "projects_summary": summary,
         "projects": project_map,
         "atlas": atlas_state,
+        "roles": roles_state,
     }
     return snapshot
 
@@ -309,10 +374,110 @@ def format_markdown_report(current: Dict[str, Any], delta: Dict[str, Any]) -> st
             for ch in td["project_changes"]:
                 lines.append(f"  - **`{ch['project']}`**：Open `{ch['open_delta']:+d}`, Closed `{ch['closed_delta']:+d}`")
 
+    # 3. 核心執行器與守護角色在席狀態
+    roles_state = current.get("roles", {})
+    if roles_state:
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("## 🐾 3. 核心執行器與守護角色在席狀態 (Roles & Executors)")
+        for slug, r_info in roles_state.items():
+            name = r_info.get("display_name", slug)
+            status = r_info.get("status", "UNKNOWN")
+            cycle = r_info.get("cycle", 0)
+            latest_task = r_info.get("latest_task")
+            latest_verdict = r_info.get("latest_verdict")
+
+            status_desc = f"`{status}` (Cycle: `{cycle}`)"
+            detail = ""
+            if latest_task:
+                # 截斷過長任務名
+                task_snippet = (latest_task[:70] + "...") if len(latest_task) > 70 else latest_task
+                verdict_snippet = f" ➔ `[{latest_verdict}]`" if latest_verdict else ""
+                detail = f"\n  - 最新動作: {task_snippet}{verdict_snippet}"
+
+            recon_summary = r_info.get("recon_summary")
+            if recon_summary:
+                detail += f"\n  - 情資成果: {recon_summary}"
+
+            lines.append(f"- **{name}**: {status_desc}{detail}")
+
     lines.append("")
     lines.append("---")
     lines.append("*守護不變量：邏輯與資料物理分離，快照歷史安全保留於 `$AGENT_DATA_ROOT/snapshots/inventory/`。*")
     return "\n".join(lines)
+
+
+def validate_authoritative_data_root(data_root: Path) -> None:
+    """Fail closed when executed on a non-Oracle host without authoritative agent-data."""
+    projects_dir = data_root / "projects"
+    governance_dir = data_root / "governance" / "directory.json"
+    if not projects_dir.is_dir():
+        raise ValueError(
+            f"NON_AUTHORITATIVE_DATA_ROOT: missing projects directory under {data_root}; "
+            "dispatch /status-diff to Oracle via scripts/submit_agentos_command.sh instead of scanning local disk."
+        )
+    has_documented = any(
+        (p / "STATUS.md").is_file()
+        for p in projects_dir.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    )
+    if not governance_dir.is_file() and not has_documented:
+        raise ValueError(
+            f"NON_AUTHORITATIVE_DATA_ROOT: {data_root} has no governance/directory.json and 0 documented projects; "
+            "this host is not the Oracle truth center. Dispatch /status-diff to Oracle via scripts/submit_agentos_command.sh."
+        )
+
+
+DEFAULT_COOLDOWN_SECONDS = 6 * 3600  # 預設 6 小時冷卻期
+
+
+def should_persist_snapshot(
+    snapshot_dir: Path,
+    current: Dict[str, Any],
+    delta: Dict[str, Any],
+    cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
+) -> Tuple[bool, str]:
+    """判斷是否應持久化保存快照：
+    1. 若尚無任何快照，必須保存。
+    2. 若檢測到實質生態變更（Git SHA 變遷、新專案、TODOs 變化），值得保存。
+    3. 若距上一筆快照已超過冷卻週期（如 6 小時），作為定期定錨保存。
+    4. 其餘常態例行盤點（無實質異動且在冷卻期內）跳過存檔，避免垃圾快照碎片化。
+    """
+    latest_file = snapshot_dir / "latest.json"
+    if not latest_file.is_file():
+        return True, "INITIAL_BASELINE"
+
+    # 檢測實質變更
+    if delta.get("has_baseline"):
+        gd = delta.get("git_delta", {})
+        if gd.get("changed"):
+            return True, "GIT_SHA_CHANGED"
+
+        pd = delta.get("project_delta", {})
+        if pd.get("new_projects") or pd.get("removed_projects") or pd.get("newly_documented"):
+            return True, "PROJECT_INVENTORY_CHANGED"
+
+        td = delta.get("todo_delta", {})
+        if td.get("open_delta", 0) != 0 or td.get("closed_delta", 0) != 0:
+            return True, "TODO_STATUS_CHANGED"
+
+    # 檢測冷卻時間
+    try:
+        latest_data = json.loads(latest_file.read_text(encoding="utf-8"))
+        latest_ts_str = latest_data.get("timestamp")
+        if latest_ts_str:
+            latest_dt = datetime.datetime.fromisoformat(latest_ts_str)
+            now_dt = datetime.datetime.fromisoformat(current.get("timestamp"))
+            elapsed = (now_dt - latest_dt).total_seconds()
+            if elapsed >= cooldown_seconds:
+                return True, f"COOLDOWN_ELAPSED ({int(elapsed)}s >= {cooldown_seconds}s)"
+            else:
+                return False, f"COOLDOWN_ACTIVE ({int(elapsed)}s < {cooldown_seconds}s, no material change)"
+    except Exception as exc:
+        return True, f"ERROR_READING_LATEST ({exc})"
+
+    return False, "NO_MATERIAL_CHANGE"
 
 
 def run_inventory_diff(
@@ -322,11 +487,20 @@ def run_inventory_diff(
     output_json: bool = False,
     base_target: Optional[str] = None,
     previous_n: Optional[int] = None,
+    is_user_invocation: bool = False,
+    cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
 ) -> Tuple[Dict[str, Any], str]:
     """執行全流程盤點、比對與快照儲存。"""
+    """執行全流程盤點、比對與快照儲存。
+
+    支援：
+    1. 使用者呼叫模式 (is_user_invocation=True)：預設以今日起點 (start-of-day) 或 user_latest 為基準，且預設不覆寫系統 latest。
+    2. 系統排程模式：受冷卻閥 (cooldown_seconds) 與實質變更守衛保護，避免每 10 分鐘洗牌。
+    """
     snapshot_dir = data_root / "snapshots" / "inventory"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     latest_file = snapshot_dir / "latest.json"
+    user_latest_file = snapshot_dir / "user_latest.json"
 
     # 1. 讀取 baseline
     baseline = None
@@ -361,6 +535,28 @@ def run_inventory_diff(
                 baseline = json.loads(target_snap.read_text(encoding="utf-8"))
             except Exception:
                 baseline = None
+    elif is_user_invocation:
+        # 使用者互動查詢：優先比對上次使用者查詢點，若無則比對今日起點
+        if user_latest_file.exists():
+            try:
+                baseline = json.loads(user_latest_file.read_text(encoding="utf-8"))
+            except Exception:
+                baseline = None
+        if not baseline:
+            today_str = datetime.datetime.now(
+                datetime.timezone(datetime.timedelta(hours=8))
+            ).strftime("%Y%m%d")
+            today_snaps = [s for s in all_snapshots if s.name.startswith(f"snapshot-{today_str}")]
+            if today_snaps:
+                try:
+                    baseline = json.loads(today_snaps[0].read_text(encoding="utf-8"))
+                except Exception:
+                    baseline = None
+        if not baseline and latest_file.exists():
+            try:
+                baseline = json.loads(latest_file.read_text(encoding="utf-8"))
+            except Exception:
+                baseline = None
     elif latest_file.exists():
         try:
             baseline = json.loads(latest_file.read_text(encoding="utf-8"))
@@ -377,22 +573,44 @@ def run_inventory_diff(
     report_md = format_markdown_report(current, delta)
 
     # 5. 存檔（若 save=True）
+    # 5. 存檔與冷卻判定
+    saved = False
+    save_reason = "SAVE_DISABLED"
+
     if save:
         timestamp_str = datetime.datetime.now(
             datetime.timezone(datetime.timedelta(hours=8))
         ).strftime("%Y%m%d_%H%M%S")
         history_file = snapshot_dir / f"snapshot-{timestamp_str}.json"
+        if is_user_invocation:
+            # 使用者查詢記錄存至 user_latest.json，不污染系統 baseline
+            user_latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            saved = True
+            save_reason = "USER_INVOCATION_RECORDED"
+        else:
+            # 系統排程自動盤點：執行冷卻閥與變更過濾
+            should_save, reason = should_persist_snapshot(snapshot_dir, current, delta, cooldown_seconds)
+            save_reason = reason
+            if should_save:
+                timestamp_str = datetime.datetime.now(
+                    datetime.timezone(datetime.timedelta(hours=8))
+                ).strftime("%Y%m%d_%H%M%S")
+                history_file = snapshot_dir / f"snapshot-{timestamp_str}.json"
 
-        # 寫入歷史存檔
-        history_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        # 更新 latest.json
-        latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                history_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                latest_file.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                saved = True
 
     result = {
         "schema": "agentos.inventory-diff-receipt/v1",
         "steward": "governance.themis_command_steward",
         "current": current,
         "delta": delta,
+        "persistence": {
+            "saved": saved,
+            "reason": save_reason,
+            "is_user_invocation": is_user_invocation,
+        },
     }
 
     return result, report_md
@@ -404,13 +622,27 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON instead of markdown")
     parser.add_argument("--base", type=str, default=None, help="Baseline snapshot (snapshot filename, path, or 'start-of-day')")
     parser.add_argument("--previous", type=int, default=None, help="Compare with Nth snapshot from the end (e.g. 1 for previous snapshot)")
+    parser.add_argument("--allow-non-authoritative", action="store_true", help="Allow running against a non-Oracle local data_root")
+    parser.add_argument("--system-scheduled", action="store_true", help="Mark as background system scheduled invocation (applies cooldown & updates system latest)")
     args = parser.parse_args()
 
+    data_root = Path(os.environ.get("AGENT_DATA_ROOT") or AGENT_DATA_DEFAULT)
+    if not args.allow_non_authoritative:
+        try:
+            validate_authoritative_data_root(data_root)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(2)
+
+    is_user = not args.system_scheduled
+
     result, report_md = run_inventory_diff(
+        data_root=data_root,
         save=not args.no_save,
         output_json=args.json,
         base_target=args.base,
         previous_n=args.previous,
+        is_user_invocation=is_user,
     )
 
     if args.json:

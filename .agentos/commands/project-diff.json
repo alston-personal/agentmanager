@@ -1,0 +1,8 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "command": "/project-diff",
+  "steward": "governance.themis_command_steward",
+  "action": "themis.project.diff",
+  "runner": "scripts/themis_project_diff.py",
+  "description": "單一專案島嶼深度時序差分、產出物變遷與合規審計 (Project-Level Temporal Delta Diff)"
+}

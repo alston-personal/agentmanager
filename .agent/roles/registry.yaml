@@ -463,6 +463,9 @@ roles:
   - web.aesthetic.audit
   - web.ui.redesign
   - web.auth_component.standardize
+  - web.design_taste.enforce
+  primary_skills:
+  - design-taste-frontend
   outputs:
   - aesthetic_audit_receipt
   - ui_specification
