@@ -4,6 +4,15 @@ Added `.agent/skills/monthly_report` establishing a two-tier cross-node monthly 
 
 ---
 
+## 2026-11-23 — Two-Tier Cross-Node Monthly Report Coordinator (`capability://governance.report.monthly`)
+
+1. **Oracle Coordinator & Human Review Gate**:
+   - Implemented `agent_core/monthly_report_coordinator.py` with strict DQA public/private isolation whitelist, Friday-of-last-Wednesday-week date rule (with override support), and fail-closed `assert_publish_allowed()` Human Review Gate.
+   - Added `.agent/skills/monthly_report/scripts/harvest_unfiltered_nodes.py` (Zero-Filter Harvest across `dqa03backup`, `dqa03restore`, `vopc5750`) and `confluence_publish_helper.py` (auto-linking uploaded attachments via `<ac:link><ri:attachment>`).
+   - Verified with `tests/test_monthly_report_coordinator.py` (3/3 PASS) and live E2E Confluence publication on `vopc5750` (pages `548711452` & `549994863`).
+
+---
+
 ## 2026-11-20 — Universal Atlas Fork Snapshot in ONE MCP `resolve()` (`agentos_node/one_mcp.py`)
 
 1. **Cross-surface Atlas Avatar parity (Gemini, Codex, Claude Code, Web GPT)**:

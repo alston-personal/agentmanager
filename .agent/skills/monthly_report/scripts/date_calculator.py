@@ -19,7 +19,7 @@ def get_last_wednesday(year: int, month: int) -> datetime.date:
 def get_report_date(year: int, month: int) -> datetime.date:
     """
     Return the Friday of the week containing the last Wednesday of the month.
-    Since Wednesday is day 2 of the week, Friday is Wednesday + 2 days.
+    Since Wednesday is day 2 of the week, Friday is Wednesday + 2 days (may cross month boundary).
     """
     wed = get_last_wednesday(year, month)
     return wed + datetime.timedelta(days=2)
@@ -32,9 +32,18 @@ def get_previous_month(year: int, month: int) -> Tuple[int, int]:
     return year, month - 1
 
 
-def get_report_metadata(year: int, month: int, reporter: str = "alston.huang") -> dict:
-    """Compute current report date, previous report date and page titles."""
-    curr_date = get_report_date(year, month)
+def get_report_metadata(
+    year: int,
+    month: int,
+    reporter: str = "alston.huang",
+    override_date: str | None = None,
+) -> dict:
+    """Compute current report date (supports explicit override_date YYYY-MM-DD), previous report date and page titles."""
+    curr_date = (
+        datetime.date.fromisoformat(override_date)
+        if override_date
+        else get_report_date(year, month)
+    )
     prev_y, prev_m = get_previous_month(year, month)
     prev_date = get_report_date(prev_y, prev_m)
     
