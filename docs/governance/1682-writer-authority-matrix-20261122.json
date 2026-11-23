@@ -1,0 +1,107 @@
+{
+  "schema": "agentos.production-writer-authority-matrix/v0.1",
+  "status": "source-and-historical-receipt-preliminary_not_live_authorized",
+  "audit_date": "2026-11-22",
+  "baseline_main_sha": "77138a48a2661cd4e46f15c605d1db010367bc1a",
+  "entries": [
+    {
+      "id": "core-bundle-legacy-push",
+      "entry": ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml:converge",
+      "trigger": "core/integration push or manual eligible",
+      "actor": "GitHub-hosted ubuntu-latest; SSH identity from AGENTOS_DEPLOY_USER || N8N_DEPLOY_USER",
+      "credential_reference": "AGENTOS_DEPLOY_SSH_KEY || N8N_DEPLOY_SSH_KEY",
+      "target": "Oracle core immutable release Worktree, user/systemd service units and current symlink",
+      "current_boundary": "Workflow concurrency group and local rollback; no independently proven mandatory ONE-approved intent / shared cross-publisher fencing",
+      "observed": "2026-11-09 successful remote install and runtime attest, Run #42576789610",
+      "current_effective_permission": "unknown",
+      "review": "P0"
+    },
+    {
+      "id": "core-readonly-ssh-audit",
+      "entry": ".github/workflows/oracle-core-service-runtime-audit.yml:audit",
+      "trigger": "manual or PR path-filter",
+      "actor": "GitHub-hosted ubuntu-latest; SSH same deploy-user fallback",
+      "credential_reference": "SAME AGENTOS_DEPLOY_SSH_KEY || N8N_DEPLOY_SSH_KEY",
+      "target": "Core current symlink, service PID/cwd (reads)",
+      "current_boundary": "Current job commands read-only; remote SSH account not proven read-only; PR trust and credential scope need review",
+      "observed": "2026-11-15 Core 9/10 audit; 2026-11-22 Teams-only readonly preflight 8/8",
+      "current_effective_permission": "unknown",
+      "review": "P0_shared_credential"
+    },
+    {
+      "id": "emergency-action-relay-rescue",
+      "entry": ".github/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml",
+      "trigger": "workflow_dispatch only",
+      "actor": "GitHub-hosted SSH as ubuntu (explicit preflight)",
+      "credential_reference": "AGENTOS_DEPLOY_SSH_KEY || N8N_DEPLOY_SSH_KEY",
+      "target": "Oracle owner-managed Action Relay/Chronos recovery",
+      "current_boundary": "Exact main and ubuntu-owner preflight, script rollback; independent rescue safety must be live tested",
+      "observed": "Historically manual recovery runs 2026-11-15; source-only current",
+      "current_effective_permission": "unknown",
+      "review": "P0_rescue_keep_available"
+    },
+    {
+      "id": "realm-fabric-cas",
+      "entry": "agentos_node/action_relay.py claim/advance/renew/release/install_release and .github/workflows/deploy-realm-fabric-fenced.yml",
+      "trigger": "Action Relay capsule / separate Workflow",
+      "actor": "Oracle ubuntu Relay plus trusted capsule owner path (not equal to ONE approval)",
+      "credential_reference": "Unix owner/group/mode and constrained Action Relay call ingress",
+      "target": "Realm Fabric specific immutable release, systemd unit, core-deployment.json",
+      "current_boundary": "Existing file-lock and generation/lease CAS; current lease_owner text is caller supplied; trusted ONE approval integration not verified",
+      "observed": "Contract exists since 2026-08; loaded installed revision not attested here",
+      "current_effective_permission": "unknown",
+      "review": "P0"
+    },
+    {
+      "id": "runtime-converge-relay",
+      "entry": "agentos_node/runtime_converge_action_relay.py and agent_core/runtime_converge_contract.py",
+      "trigger": "runtime convergence request; legacy core/integration allowlist",
+      "actor": "Oracle ubuntu under Action Relay",
+      "credential_reference": "Relay Unix capsule identity and local repo permissions",
+      "target": "Git checkout/worktree, runtime services/installation",
+      "current_boundary": "Separate request locks and rollback; not shown protected by Realm deployment state",
+      "observed": "Source implementation verified; no fresh current actual process version or per-principal operation receipt",
+      "current_effective_permission": "unknown",
+      "review": "P0"
+    },
+    {
+      "id": "oracle-self-hosted-governance-attestation",
+      "entry": ".github/workflows/oracle-attest-governance-permissions.yml",
+      "trigger": "main push path-filter or manual",
+      "actor": "Oracle self-hosted Linux ARM64 runner identity; exact user must be read from job",
+      "credential_reference": "Existing self-hosted runner authority",
+      "target": "Governance Directory stats, ACL and process-read observation",
+      "current_boundary": "Commands are read-only; runner underlying filesystem privileges are not demonstrated read-only",
+      "observed": "Source-only verified",
+      "current_effective_permission": "unknown",
+      "review": "P1"
+    },
+    {
+      "id": "action-relay-diagnostic-mutating-checkout",
+      "entry": ".github/workflows/oracle-diagnose-action-relay-runtime.yml",
+      "trigger": "manual",
+      "actor": "Oracle self-hosted runner",
+      "credential_reference": "Runner repo write permission and local Unix owner",
+      "target": "Runner checkout diagnostic file; local git reset --hard and commit",
+      "current_boundary": "Contains mutation and live capsule dumps; MUST NOT use as read-only inspector",
+      "observed": "Source verified, not executed",
+      "current_effective_permission": "unknown",
+      "review": "P1_safety"
+    }
+  ],
+  "cross_cutting_requirements": [
+    "Authenticated ONE approval tied to exact artifact, realm, environment, operation, caller, expiry and immutable digest",
+    "Canonical single production release owner per target; do not add independent store unless reconciling existing Realm authority",
+    "Real SSH forced-command, authorized_keys, sudo -l, file ACL and effective unit-write privileges (sanitized, independent trusted inspector)",
+    "Compare installed Worktree and effective systemd loaded PID/cwd plus rescue ability after outage",
+    "Provider workflow ID/active state, branch reachability, workflow source version and credential-scope review",
+    "Avoid disclosing secrets or unfiltered capsule payloads in logs"
+  ],
+  "assumptions_not_proven": [
+    "Common YAML credential expressions do not prove same effective secret value or actual account privileges at each job run",
+    "Explicit source steps do not prove current provider can still authenticate to Oracle",
+    "A secure group-owned capsule alone does not prove a trusted ONE approval",
+    "An existing lease owner string does not identify a cryptographically authenticated human approver"
+  ],
+  "mutation_performed": false
+}

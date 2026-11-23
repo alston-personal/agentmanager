@@ -221,6 +221,50 @@ jobs:
               observed["configured_interval_positive"] = (
                   float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5")) > 0
               )
+              # Inspect serialized heartbeat data independently: NEVER import
+              # or execute code from the installed runtime during a read-only audit.
+              observed["sweep_heartbeat_reason"] = "missing_or_unreadable"
+              try:
+                  import json, time
+                  stat_tail = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+                  ticks = os.sysconf("SC_CLK_TCK")
+                  started = (
+                      time.time() - float(Path("/proc/uptime").read_text().split()[0])
+                      + int(stat_tail[19]) / ticks
+                  )
+                  interval = float(env.get("AGENTOS_DISPATCH_INTERVAL_SECONDS", "5"))
+                  heartbeat_path = (
+                      Path(env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data"))
+                      / "runtime" / "control-plane" / "dispatch-sweep-heartbeat.json"
+                  )
+                  if interval <= 0:
+                      observed["sweep_heartbeat_reason"] = "invalid_runtime_config"
+                  elif heartbeat_path.is_symlink() or not heartbeat_path.is_file():
+                      observed["sweep_heartbeat_reason"] = "missing_or_unreadable"
+                  elif heartbeat_path.stat().st_size > 2048:
+                      observed["sweep_heartbeat_reason"] = "oversized"
+                  else:
+                      record = json.loads(heartbeat_path.read_text(encoding="utf-8"))
+                      stamp = record.get("observed_at_epoch")
+                      age = time.time() - stamp if type(stamp) in (float, int) else None
+                      if record.get("schema") != "agentos.dispatch-sweep-heartbeat/v1":
+                          observed["sweep_heartbeat_reason"] = "unknown_schema"
+                      elif type(record.get("pid")) is not int or record["pid"] != pid:
+                          observed["sweep_heartbeat_reason"] = "pid_mismatch"
+                      elif age is None:
+                          observed["sweep_heartbeat_reason"] = "bad_timestamp"
+                      elif stamp < started - 1 or age < -2 or age > max(30.0, interval * 3):
+                          observed["sweep_heartbeat_reason"] = "stale_or_future"
+                      elif record.get("healthy") is not True:
+                          observed["sweep_heartbeat_reason"] = "last_sweep_failed"
+                      elif observed["loaded_process_proven"]:
+                          observed["sweep_active_proven"] = True
+                          observed["sweep_heartbeat_reason"] = "fresh_success"
+                      else:
+                          observed["sweep_heartbeat_reason"] = "runtime_identity_unverified"
+              except (OSError, ValueError, TypeError, AttributeError):
+                  observed["sweep_active_proven"] = False
+                  observed["sweep_heartbeat_reason"] = "inspection_unavailable"
               # Constructor-loaded .env files may differ from /proc environ.
               # Runtime target registration and an active sweep thread must be
               # separately attested; don't turn booleans into false proof.
@@ -307,36 +351,53 @@ jobs:
                       # Mirror the non-mutating *choice* criteria in the
                       # installed RuntimeDispatcher; do not wake any target.
                       online_caps = set()
+                      nononline_pull_caps = set()
                       if conn.execute(
                           "SELECT 1 FROM sqlite_master WHERE name='nodes'"
                       ).fetchone():
-                          for (manifest_raw,) in conn.execute(
-                              "SELECT manifest_json FROM nodes WHERE status='online'"
+                          for node_status, manifest_raw in conn.execute(
+                              "SELECT status, manifest_json FROM nodes"
                           ):
                               try:
                                   manifest = json.loads(manifest_raw)
-                                  for item in manifest.get("spec", {}).get("capabilities", []):
-                                      if isinstance(item, dict) and isinstance(item.get("name"), str):
-                                          online_caps.add(item["name"])
+                                  caps = {
+                                      item["name"]
+                                      for item in manifest.get("spec", {}).get("capabilities", [])
+                                      if isinstance(item, dict) and isinstance(item.get("name"), str)
+                                  }
+                                  if node_status == "online":
+                                      online_caps.update(caps)
+                                  else:
+                                      nononline_pull_caps.update(caps)
                               except (TypeError, ValueError, AttributeError):
                                   pass
                       push_target_caps = []
+                      disabled_push_caps = set()
                       for target_name, kind, caps_raw, enabled in target_rows:
-                          if not enabled or kind not in ("github_actions", "webhook"):
+                          if kind not in ("github_actions", "webhook"):
                               continue
                           try:
                               caps = json.loads(caps_raw)
                               if isinstance(caps, list):
-                                  push_target_caps.append((target_name, kind, set(
-                                      c for c in caps if isinstance(c, str)
-                                  )))
+                                  names = {c for c in caps if isinstance(c, str)}
+                                  if enabled:
+                                      push_target_caps.append((target_name, kind, names))
+                                  else:
+                                      disabled_push_caps.update(names)
                           except (TypeError, ValueError):
                               pass
+                      # Only totals leave Oracle. Do not print capability labels,
+                      # task data, target IDs or names of disabled executors.
                       missing_runtime_reasons = {
                           "no_registered_push_capability": 0,
+                          "registered_but_disabled_push_capability": 0,
                           "excluded_by_runtime_policy": 0,
                       }
                       submitted_capabilities = set()
+                      missing_push_pull_history = {
+                          "nononline_pull_capability_registered": 0,
+                          "no_nonline_pull_capability_registration": 0,
+                      }
                       dispatch_classes = {
                           "waiting_for_online_pull": 0,
                           "eligible_push_by_capability": 0,
@@ -384,17 +445,81 @@ jobs:
                                   dispatch_classes["eligible_push_by_capability"] += 1
                               else:
                                   dispatch_classes["no_matching_runtime"] += 1
-                                  reason = (
-                                      "excluded_by_runtime_policy"
-                                      if any(capability in caps
-                                             for _, _, caps in push_target_caps)
-                                      else "no_registered_push_capability"
-                                  )
+                                  if any(capability in caps for _, _, caps in push_target_caps):
+                                      reason = "excluded_by_runtime_policy"
+                                  elif capability in disabled_push_caps:
+                                      reason = "registered_but_disabled_push_capability"
+                                  else:
+                                      reason = "no_registered_push_capability"
                                   missing_runtime_reasons[reason] += 1
+                                  # This is independent secondary evidence:
+                                  # a non-online Pull node MAY have registered
+                                  # the missing capability. It is NOT proof of
+                                  # an authorized or recoverable Executor owner.
+                                  if capability in nononline_pull_caps:
+                                      missing_push_pull_history[
+                                          "nononline_pull_capability_registered"
+                                      ] += 1
+                                  else:
+                                      missing_push_pull_history[
+                                          "no_nonline_pull_capability_registration"
+                                      ] += 1
                           except (ValueError, TypeError, AttributeError):
                               dispatch_classes["malformed_ir"] += 1
                       observed["submitted_distinct_capability_count"] = len(submitted_capabilities)
                       observed["missing_runtime_reasons"] = missing_runtime_reasons
+                      observed["missing_push_pull_history"] = missing_push_pull_history
+                      # Realm NodeRegistry is a *separate* existing source:
+                      # /agent-data/realm/nodes.json, not Control Plane SQLite.
+                      # Read it as bounded JSON data; never import installed
+                      # scripts and never export capability/node/task identities.
+                      realm_registry = Path(
+                          env.get("AGENT_DATA_ROOT") or str(Path.home() / "agent-data")
+                      ) / "realm" / "nodes.json"
+                      realm_overlap = {
+                          "registry_state": "unavailable",
+                          "submitted_matching_realm_registration": 0,
+                          "submitted_without_realm_registration": 0,
+                      }
+                      try:
+                          if realm_registry.is_symlink() or not realm_registry.is_file():
+                              realm_overlap["registry_state"] = "missing_or_symlink"
+                          elif realm_registry.stat().st_size > 5 * 1024 * 1024:
+                              realm_overlap["registry_state"] = "oversized"
+                          else:
+                              registry = json.loads(realm_registry.read_text(encoding="utf-8"))
+                              if (not isinstance(registry, dict)
+                                      or registry.get("schema") != "agentos.node-registry/v0.1"
+                                      or not isinstance(registry.get("nodes"), dict)):
+                                  realm_overlap["registry_state"] = "invalid_schema"
+                              else:
+                                  realm_caps = set()
+                                  for node in registry["nodes"].values():
+                                      if isinstance(node, dict) and isinstance(node.get("capabilities"), list):
+                                          realm_caps.update(
+                                              c for c in node["capabilities"] if isinstance(c, str)
+                                          )
+                                  for capability, payload_raw in conn.execute(
+                                      "SELECT capability, payload_json FROM tasks "
+                                      "WHERE status='submitted' AND target_node_id IS NULL"
+                                  ):
+                                      try:
+                                          payload = json.loads(payload_raw)
+                                      except (ValueError, TypeError):
+                                          continue
+                                      if (not isinstance(payload, dict)
+                                              or payload.get("protocol") != "agentos.distributed-task/v1"):
+                                          continue
+                                      key = (
+                                          "submitted_matching_realm_registration"
+                                          if capability in realm_caps
+                                          else "submitted_without_realm_registration"
+                                      )
+                                      realm_overlap[key] += 1
+                                  realm_overlap["registry_state"] = "read"
+                      except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
+                          realm_overlap["registry_state"] = "unreadable"
+                      observed["realm_node_registry_overlap"] = realm_overlap
                       observed["dispatch_choice_classes"] = dispatch_classes
                       observed["dispatch_choice_reconciles"] = (
                           sum(dispatch_classes.values()) == observed["submitted_count"]

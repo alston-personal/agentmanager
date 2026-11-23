@@ -1,0 +1,61 @@
+{
+  "schema": "agentos.oracle-readonly-inspection-candidates/v1",
+  "review_date": "2026-11-22",
+  "pinned_main_sha": "77138a48a2661cd4e46f15c605d1db010367bc1a",
+  "status": "source-assessed-no-live-dispatch",
+  "entries": [
+    {
+      "path": ".github/workflows/oracle-core-service-runtime-audit.yml",
+      "evidence": "workflow_dispatch and pull_request; SSH to Oracle; readlink current target, systemctl show ActiveState/MainPID/WorkingDirectory, /proc/PID/cwd; no privileged restart in sampled root audit",
+      "classification": "read_only_candidate",
+      "cautions": [
+        "Runs from GitHub Actions via existing SSH deployment credentials, but permissions and current usability not proven",
+        "Inspected source contains additional jobs; validate all jobs' possible indirect effects before a dispatch",
+        "Not dispatched in this turn"
+      ]
+    },
+    {
+      "path": ".github/workflows/oracle-inspect-agentos-core-project-state.yml",
+      "evidence": "Self-hosted Oracle runner reads project.yaml and STATUS.md under agent-data/projects",
+      "classification": "read_only_candidate",
+      "cautions": [
+        "Not a direct loaded-release/PID/OS privilege attestation",
+        "Requires live available runner and authorization",
+        "Not dispatched"
+      ]
+    },
+    {
+      "path": ".github/workflows/core-realm-fabric-live-fingerprint-20261012.yml",
+      "evidence": "Self-hosted runner runs systemctl show, /proc/PID/cwd, current symlink inspection",
+      "classification": "read_only_candidate",
+      "cautions": [
+        "Push trigger exists; inspect all job steps and result sanitization before relying on it",
+        "No current runtime outcome read in this turn"
+      ]
+    },
+    {
+      "path": ".github/workflows/oracle-diagnose-action-relay-runtime.yml",
+      "evidence": "Although diagnostic step reads process/service/spool, subsequent step runs git fetch origin main; git reset --hard origin/main; git commit in checkout and writes diagnostic files",
+      "classification": "NOT_PROVEN_READ_ONLY",
+      "cautions": [
+        "Must not dispatch as read-only evidence",
+        "Potentially exposes live capsule contents in Job logs and commit artifact",
+        "Requires security review and sanitization before any use"
+      ]
+    },
+    {
+      "path": ".github/workflows/oracle-attest-governance-permissions.yml",
+      "evidence": "Self-hosted runner contains read-only permission attestation job",
+      "classification": "read_only_candidate",
+      "cautions": [
+        "Check exact commands and current runner identity before use",
+        "Not dispatched"
+      ]
+    }
+  ],
+  "next_steps": [
+    "Select only reviewed read-only source jobs with minimum necessary credentials and no indirect mutation",
+    "Locate existing recent run evidence for exact Oracle current symlink, active unit PID and EffectiveUser",
+    "Keep live Oracle state unknown until independently verified and timestamped"
+  ]
+}

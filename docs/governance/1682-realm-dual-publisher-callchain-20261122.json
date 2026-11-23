@@ -1,0 +1,58 @@
+{
+  "schema": "agentos.realm-dual-publisher-callchain-audit/v1",
+  "status": "main-source-audited-upstream-one-authorization-unknown",
+  "date": "2026-11-22",
+  "baseline_sha": "77138a48a2661cd4e46f15c605d1db010367bc1a",
+  "flows": [
+    {
+      "workflow": ".github/workflows/deploy-realm-fabric-core.yml",
+      "trigger": "main push path filter, manual workflow_dispatch, PR patch-only",
+      "concurrency_group": "realm-fabric-core-deploy",
+      "preflight": "Exact workflow SHA, installed Relay revision, focused tests",
+      "executor": "Oracle self-hosted runner via ActionRelayClient",
+      "mutation": "scripts/install_realm_fabric_via_action_relay.py invokes status, claim, optional release/advance, install, status",
+      "one_intent_mandatory_at_installer": "not observed",
+      "privileged_impact": "Realm service unit/release",
+      "candidate_status": "production publisher"
+    },
+    {
+      "workflow": ".github/workflows/deploy-realm-fabric-fenced.yml",
+      "trigger": "main push path filter, manual workflow_dispatch",
+      "concurrency_group": "realm-fabric-deployment-authority",
+      "preflight": "compile-fence job git fetch/reset --hard origin/main; source includes git commit and git push origin HEAD:main",
+      "executor": "Hosted compile job plus Oracle self-hosted deploy job",
+      "mutation": "runtime fence refresh then scripts/install_realm_fabric_via_action_relay.py",
+      "one_intent_mandatory_at_installer": "not observed",
+      "privileged_impact": "Realm service unit/release, runtime relay refresh, attempted protected-branch write",
+      "candidate_status": "legacy publisher require safe retirement review"
+    }
+  ],
+  "shared_fence": {
+    "path": "agentos_node/action_relay.py",
+    "state": "/home/ubuntu/agent-data/governance/core-deployment.json",
+    "lock": "/home/ubuntu/agent-data/governance/core-deployment.lock",
+    "claim_args": [
+      "desired_core_commit",
+      "lease_owner",
+      "expected_generation",
+      "lease_seconds"
+    ],
+    "install_args": [
+      "source_commit",
+      "desired_core_commit",
+      "lease_owner",
+      "deployment_generation"
+    ],
+    "installed_readback": "Claim/advance/install/status receipt with generation, observed SHA and service attestations",
+    "limitation": "ONE release approval identity is not an explicit required field; caller-side authorization still needs end-to-end review"
+  },
+  "issue": "Different GitHub concurrency groups cannot fence each other; shared target-side generation guard is critical. GitHub source contains a direct push path, but successful push/authorization not proven.",
+  "next_actions": [
+    "Inspect GitHub protected-main branch policy and effective write credentials without mutating it",
+    "Map ONE approved release intents to the installer caller, spool capsule identity and actual ubuntu Action Relay validation",
+    "Check Relay deployment lock covers all Realm mutating carriers, then independently test stale generation and rollback",
+    "Avoid treating direct GitHub workflow success as ONE-signed authority",
+    "Preserve rescue lane and verify loaded revision before retiring legacy fenced flow"
+  ],
+  "no_live_mutation": true
+}

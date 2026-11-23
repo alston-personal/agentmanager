@@ -64,10 +64,13 @@ def test_execution_and_credential_fields_fail_closed(field):
 
 
 def test_wrong_node_repo_ref_or_sha_fail_closed():
+    # Both `main` and legacy `core/integration` are allowed during #1682 cutover;
+    # arbitrary branches must still fail closed.
+    assert validate_runtime_converge_request(request(source_ref="main")).source_ref == "main"
     cases = [
         (request(node_id="vopc5750"), "node_not_allowed"),
         (request(repository="alston-personal/zeus-writer"), "repository_not_allowed"),
-        (request(source_ref="main"), "source_ref_not_allowed"),
+        (request(source_ref="feature/unapproved-branch"), "source_ref_not_allowed"),
         (request(source_commit="abc"), "source_commit_invalid"),
         (request(source_commit=SHA.upper()), "source_commit_invalid"),
     ]

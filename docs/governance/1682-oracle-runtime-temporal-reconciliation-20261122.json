@@ -1,0 +1,93 @@
+{
+  "schema": "agentos.oracle-runtime-temporal-reconciliation/v1",
+  "status": "historical-evidence-reconciled-current-whole-core-unverified",
+  "as_of_taipei": "2026-11-22",
+  "baselines": {
+    "main_sha": "77138a48a2661cd4e46f15c605d1db010367bc1a",
+    "g0_pr": 2368
+  },
+  "evidence": [
+    {
+      "time_utc": "2026-10-06",
+      "run_id": 37394284772,
+      "url": "https://github.com/alston-personal/agentmanager/actions/runs/37394284772",
+      "scope": "10 Core service paths",
+      "observation": {
+        "immutable": 10,
+        "mutable": 0,
+        "version_pass": true
+      },
+      "strength": "historical Oracle runtime audit"
+    },
+    {
+      "time_utc": "2026-11-09T07:03:14Z",
+      "run_id": 42576789610,
+      "url": "https://github.com/alston-personal/agentmanager/actions/runs/42576789610",
+      "scope": "Core Bundle deploy",
+      "observation": {
+        "source_commit": "f9d6c93d004e8adb712953be46a10eb36dabb393",
+        "installation_done": true,
+        "immutable_runtime_check_pass": true
+      },
+      "strength": "historical actual Oracle SSH deploy Job, not current loaded-version proof"
+    },
+    {
+      "time_utc": "2026-11-15T00:13:30Z",
+      "run_id": 43657091837,
+      "url": "https://github.com/alston-personal/agentmanager/actions/runs/43657091837",
+      "job_id": 132637918255,
+      "scope": "10 Core service path audit",
+      "observation": {
+        "core_current_sha": "f9d6c93d004e8adb712953be46a10eb36dabb393",
+        "immutable": 9,
+        "mutable": 1,
+        "other": 0,
+        "mutable_service": "teams-commander.service",
+        "result": "FAIL"
+      },
+      "strength": "authenticated historical SSH audit, not current state"
+    },
+    {
+      "time_utc": "2026-11-21T21:05:19Z",
+      "time_taipei": "2026-11-22T05:05:19+08:00",
+      "run_id": 44949671719,
+      "url": "https://github.com/alston-personal/agentmanager/actions/runs/44949671719",
+      "job_id": 136984604799,
+      "scope": "teams-commander.service only",
+      "observation": {
+        "owner_class": "validated_immutable_release",
+        "checks_true": 8,
+        "checks_total": 8,
+        "read_only_job": "success",
+        "converge_job": "skipped",
+        "teams_cutover_job": "skipped"
+      },
+      "strength": "later Oracle read-only single-unit ownership proof; supersedes Nov15 Teams-only drift observation but NOT whole Core audit"
+    }
+  ],
+  "already_implemented_reused": [
+    "PR #2311 approved main Teams installer guard, documented in existing #1682 audit",
+    "PR #2312 Teams-only governed cutover, documented in existing #1682 audit",
+    "PR #2313 rollback hardening, documented in existing #1682 audit",
+    "Draft PR #2366 contains later Teams read-only immutable-owner preflight and regression assertions"
+  ],
+  "credential_boundary": {
+    "observation": "The audit job and Core Bundle deploy job at pinned main both load AGENTOS_DEPLOY_SSH_KEY || N8N_DEPLOY_SSH_KEY and AGENTOS_DEPLOY_USER || N8N_DEPLOY_USER for hosted SSH.",
+    "consequence": "A job whose commands are read-only is not evidence of a read-only SSH principal. Its effective remote privileges must be established separately; pull_request execution trust needs review.",
+    "risk_status": "OPEN_UNVERIFIED_NOT_CLAIMED_EXPLOIT"
+  },
+  "acceptance_semantics": {
+    "core_runtime_immutability": "10 path categories under immutable root; not service health, current executable file hash, single-writer authorization or ONE release approval",
+    "teams_owner": "Single Teams effective unit/PID source validated immutable as of timestamp, not all Core paths",
+    "oracle_current_version": "UNKNOWN after the latest dated readbacks",
+    "oracle_privilege": "UNKNOWN",
+    "one_authorization": "UNKNOWN"
+  },
+  "next_actions": [
+    "Find approved fresh read-only Oracle full Core audit with explicit timestamp, MainPID, actual /proc cwd and current symlink",
+    "Inspect exact remote SSH principal and sudo/file/systemd rights; validate distinction between audit and deploy secrets",
+    "Correlate release receipt to trusted ONE intent and target CAS; do not build second generation store",
+    "Do not repeat already merged Teams cutover work solely due to Nov15 historical drift"
+  ],
+  "no_live_mutation": true
+}

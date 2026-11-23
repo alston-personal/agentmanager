@@ -1,3 +1,37 @@
+## 2026-11-23 — Two-tier Cross-Node Monthly Report Skill (monthly_report; source only)
+
+Added `.agent/skills/monthly_report` establishing a two-tier cross-node monthly report generation and publishing architecture. The Coordinator role runs on `vopc5750` (Windows host with browser access), dispatching collection tasks to participating `agentos-node` instances (`dqa03backup`, `dqa03restore`, `vopc5750`). The Collector role extracts node-authoritative work slices from whitelisted company repositories and system maintenance events while strictly enforcing the company/personal boundary (excluding `agentos` and personal research from company reports). The date calculation algorithm determines target report dates as the Friday of the week containing the month's final Wednesday (supporting boundary-crossing into adjacent months). Browser automation on `vopc5750` waits for user Confluence login, duplicates the prior month's report, updates metadata and table headers, and publishes the synthesized weekly and monthly status records.
+
+---
+
+## 2026-11-23 — #1682 Runtime Converge Dual-Track Compatibility (`main` + `core/integration`)
+
+1. **Pre-cutover compatibility bridge for PR #2366**:
+   - Expanded `ALLOWED_SOURCE_REFS` in `agent_core/runtime_converge_contract.py` from `{"core/integration"}` to `{"main", "core/integration"}` so existing `node.runtime.converge` clients remain unbroken during the `#1682` cutover to `main`-only Core bundle deployment, while arbitrary branches remain fail-closed.
+   - Verified with `tests/test_runtime_converge_contract.py` and `tests/test_runtime_converge_action_relay.py` (57/57 PASS).
+
+---
+
+## 2026-11-23 — Confluence Page Properties / User Mention Guard & Browser-Gated Redmine QA Skill
+
+1. **Confluence publish helper hardening** (`.agent/skills/monthly_report/scripts/confluence_publish_helper.py`):
+   - Enforces `wrap_page_properties_details()` (`<ac:structured-macro ac:name="details">`) so parent `DQDIS Weekly Report` Page Properties Report macros always index updated reports.
+   - Enforces real Confluence user mentions (`format_user_mention()`) and automatic `<ac:link><ri:attachment>` linking for uploaded attachments.
+   - Verified with `tests/test_monthly_report_coordinator.py` (4/4 PASS).
+2. **Browser-gated Redmine QA Workflow Skill** (`.agent/skills/redmine_qa_workflow/SKILL.md`):
+   - Formalized `capability://qa.redmine.workflow` (`issue draft / update / create` and `final report`) scoped strictly to `browser.gui`-capable nodes (`vopc5750`).
+
+---
+
+## 2026-11-23 — Two-Tier Cross-Node Monthly Report Coordinator (`capability://governance.report.monthly`)
+
+1. **Oracle Coordinator & Human Review Gate**:
+   - Implemented `agent_core/monthly_report_coordinator.py` with strict DQA public/private isolation whitelist, Friday-of-last-Wednesday-week date rule (with override support), and fail-closed `assert_publish_allowed()` Human Review Gate.
+   - Added `.agent/skills/monthly_report/scripts/harvest_unfiltered_nodes.py` (Zero-Filter Harvest across `dqa03backup`, `dqa03restore`, `vopc5750`) and `confluence_publish_helper.py` (auto-linking uploaded attachments via `<ac:link><ri:attachment>`).
+   - Verified with `tests/test_monthly_report_coordinator.py` (3/3 PASS) and live E2E Confluence publication on `vopc5750` (pages `548711452` & `549994863`).
+
+---
+
 ## 2026-11-20 — Universal Atlas Fork Snapshot in ONE MCP `resolve()` (`agentos_node/one_mcp.py`)
 
 1. **Cross-surface Atlas Avatar parity (Gemini, Codex, Claude Code, Web GPT)**:
@@ -2480,3 +2514,32 @@ The current `main` copy of `.github/workflows/oracle-core-bundle-immutable-runti
 During #2366 PR CI, the existing Teams read-only check returned `active=true`, `unit_file_not_symlink=true`, `unit_text_exact_workdir=true`, `no_dropins=true`, but `unit_workdir_mutable=false`. This is evidence that the old assumption of a still-mutable Teams service is outdated, not evidence of a broken Teams service. The revised read-only preflight accepts either the original mutable workdir or a **verified** immutable release: it requires a live PID, its resolved `/proc/<pid>/cwd` equal to the actual unit workdir, an immutable release path ending in the exact 40-hex source SHA, Git worktree HEAD equal to that SHA, and the expected installed script. Other unit and ExecStart guards remain unchanged. Unknown ownership still fails closed. Only the PR's non-mutating preflight changes; `scripts/converge_teams_immutable_user.sh` still refuses to mutate an already immutable deployment unless its own strict original-owner preconditions are met. Passing source/read-only CI is not authorization to rerun an obsolete Teams-only migration.
 
 The separate unmodified `core/integration` branch workflow still has automatic push convergence. Operator-level disable/branch quarantine with readback remains required before #1682 single publisher acceptance.
+
+---
+
+### 2026-11-22 — Candidate Control Plane sweep liveness instrumentation (#2365, DRAFT)
+
+The existing Distributed Control Plane gateway already starts its `ResilientRuntimeDispatcher.run_sweep_loop` only when a push target is registered and the configured interval is positive. A running HTTP PID or a registered target alone does **not** prove the sweep thread is alive or successfully reconciling persisted children.
+
+Draft #2365 adds a non-authoritative, process-scoped `dispatch-sweep-heartbeat.json` under `$AGENT_DATA_ROOT/runtime/control-plane/`. Each periodic sweep writes an atomic minimal 0600 observation (PID, timestamp, boolean success); whole-sweep exceptions and per-task `dispatcher_error` mark it unhealthy. The existing Oracle read-only workflow independently parses the serialized heartbeat as data (without importing or executing installed Runtime code) and checks the active PID, process start, loaded Gateway identity and bounded freshness. Missing/stale/future/mismatched/unhealthy observations remain fail-closed. No task data, endpoint, token or executor identity is included. This heartbeat only attests a recent local sweep; it never grants a lease, authorizes an external side effect, or proves a push was delivered.
+
+**Acceptance boundary:** Candidate source and hosted CI are separate from Oracle installed runtime acceptance. This draft must not be merged/deployed without review, successful exact-head tests, a governed rollback plan, and real child-wake/lease/ONE receipts. Legacy Client `lease_epoch` rollout and external Git/deploy/filesystem result fencing remain independent open gates in #1682/#470. Other active `agentos-core` continuation selectors must not be overwritten.
+
+
+### 2026-11-22 — Missing capability taxonomy, read-only candidate (#1682 / #2365)
+
+The 2026-11-21 20:15 UTC Oracle read-only audit observed 89 tasks, eight untargeted submitted canonical IRs spanning two capabilities, zero eligible push-by-capability matches and two enabled push targets. The previously reported `no_registered_push_capability=8` checks enabled registrations only, and therefore cannot distinguish capabilities that exist solely on **disabled** target records from those entirely absent from the target registry. It does not prove a specific Executor has been removed or that a sweep failed. The current deployed Gateway SHA (`24dedbe4d3e5cb85c8391117dcd90cc6dc111bfc`) is not the current source SHA.
+
+Draft #2365 now adds a third safe aggregated reason `registered_but_disabled_push_capability` to the existing Oracle `missing_runtime_reasons` report. No capability values, task contents, target identities, endpoints or secrets are exported, and this does not change actual dispatch selection or target registration. The split becomes actionable only after an authorized read-only audit runs against the new workflow source. Do not infer the eight tasks belong to the new group before such evidence. Re-enable or migrate only upon private owner/provenance verification; the unrelated Windows vopc5750 ONE active IR must remain unchanged.
+
+
+### 2026-11-22 — Oracle missing-push capability and Pull-node registration distinction (#2365)
+
+PR #2365's existing read-only Oracle job genuinely ran against the effective Oracle database at 2026-11-21 20:35 UTC and returned `missing_runtime_reasons = {no_registered_push_capability: 8, registered_but_disabled_push_capability: 0, excluded_by_runtime_policy: 0}`. Its workflow source thus validated the **enabled/disabled push** distinction, but the installed Control Plane release remained SHA `24dedbe4d3e5cb85c8391117dcd90cc6dc111bfc` and lacked the candidate sweep heartbeat. That is neither a healthy-sweep certificate nor a proof that no Pull node was ever registered for these IRs.
+
+The subsequent draft candidate adds a separate non-sensitive `missing_push_pull_history` aggregate among unmatched submitted tasks: `nononline_pull_capability_registered` versus `no_nonline_pull_capability_registration`. It examines registered Node manifests with `status != online` without reporting capability labels, node IDs, project names, payloads or credentials. A matching offline or merely registered Pull manifest is **not** authorization to route a task, proof the machine is still available, or proof of a valid legacy owner. This is independent observational evidence; real routing and lease behavior are unchanged. New counts must be read from an actual Oracle audit run, not assumed before CI and execution.
+
+
+### 2026-11-22 — Cross-registry capability provenance check (#2365)
+
+A crucial distinction is now explicit: the Distributed Control Plane stores its own Node manifests in SQLite `nodes.manifest_json`, while the existing Realm `agent_core.node_registry.NodeRegistry` reads a separate `$AGENT_DATA_ROOT/realm/nodes.json` with `agentos.node-registry/v0.1` schema and a different capability field shape. Absence in Control Plane SQLite does **not** establish absence in the Realm Node Registry. To avoid a duplicate reconciler or broad dispatcher changes, the existing Oracle read-only audit now parses that Realm JSON **as data**, with bounded size/schema/symlink checks, and compares only untargeted submitted Canonical IR capabilities to Realm registrations. The audit exports two aggregate counts and registry read-state only, never task/capability/node identities or payloads. Realm presence is historical registration evidence, **not** proof of availability, authorization, or safe cross-Realm dispatch. No registry data is copied into the Control Plane or automatically synchronized; actual owner/reason for the two missing capability labels still requires governed private reconciliation.

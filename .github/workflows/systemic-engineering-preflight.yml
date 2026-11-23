@@ -1,0 +1,32 @@
+name: Systemic Engineering Preflight
+
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'agent_core/**'
+      - 'agentos_node/**'
+      - '.github/workflows/**'
+      - 'governance/**'
+      - '.agent/governance/**'
+      - 'scripts/systemic_engineering_preflight.py'
+      - 'tests/test_systemic_engineering_preflight.py'
+      - 'docs/governance/change-preflights/**'
+      - 'docs/governance/decisions/GOV-2026-11-22-001-systemic-engineering-first.md'
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-admission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch canonical comparison base
+        run: git fetch --no-tags origin main
+      - name: Run preflight regression tests
+        run: python3 -m unittest tests.test_systemic_engineering_preflight -v
+      - name: Require high-risk PR-local inventory and plan
+        run: python3 scripts/systemic_engineering_preflight.py --base origin/main

@@ -9,7 +9,7 @@ SCHEMA = "agentos.runtime-converge-request/v1"
 CAPABILITY = "node.runtime.converge"
 ALLOWED_NODE_IDS = {"oracle-core-node"}
 ALLOWED_REPOSITORY = "alston-personal/agentmanager"
-ALLOWED_SOURCE_REFS = {"core/integration"}
+ALLOWED_SOURCE_REFS = {"main", "core/integration"}
 REQUEST_FIELDS = {"schema", "request_id", "node_id", "repository", "source_ref", "source_commit"}
 FORBIDDEN_KEYS = {
     "argv",

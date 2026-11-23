@@ -204,6 +204,20 @@ def test_oracle_readonly_control_plane_audit_parses_proc_nul_and_redacts_owners(
     assert 'submitted_task_classes' in source
     assert 'submitted_inventory_reconciles' in source
     assert 'PRAGMA query_only=ON' in source
+    assert '"registered_but_disabled_push_capability": 0' in source
+    assert 'disabled_push_caps.update(names)' in source
+    assert 'elif capability in disabled_push_caps:' in source
+    assert 'missing_runtime_reasons[reason] += 1' in source
+    assert '"SELECT status, manifest_json FROM nodes"' in source
+    assert '"nononline_pull_capability_registered": 0' in source
+    assert '"no_nonline_pull_capability_registration": 0' in source
+    assert 'observed["missing_push_pull_history"] = missing_push_pull_history' in source
+    assert 'observed["realm_node_registry_overlap"] = realm_overlap' in source
+    assert '"agentos.node-registry/v0.1"' in source
+    assert 'realm_registry.is_symlink()' in source
+    assert '"submitted_matching_realm_registration"' in source
+    assert '"submitted_without_realm_registration"' in source
+    assert 'registry.get("nodes")' in source
     assert 'service restart' not in source.split("  control-plane-readonly:", 1)[1].lower()
 
 
@@ -276,3 +290,21 @@ def test_teams_rollback_is_armed_before_atomic_unit_replacement():
     assert 'teams_cutover_rollback=FAILED_TO_VERIFY_PREVIOUS_OWNER' in text
     assert '[ "$rollback_wd" = "$ORIGINAL_WD" ]' in text
     assert '[ "$rollback_cwd" = "$ORIGINAL_WD" ]' in text
+
+
+def test_readonly_sweep_audit_never_imports_installed_runtime_code():
+    from pathlib import Path
+
+    workflow = (
+        Path(__file__).resolve().parents[1] /
+        ".github/workflows/oracle-core-service-runtime-audit.yml"
+    ).read_text(encoding="utf-8")
+    audit = workflow.split("  control-plane-readonly:", 1)[1]
+    assert "dispatch-sweep-heartbeat.json" in audit
+    assert 'observed["sweep_active_proven"] = True' in audit
+    assert 'observed["loaded_process_proven"]' in audit
+    assert "spec_from_file_location" not in audit
+    assert "exec_module" not in audit
+    assert 'Path(f"/proc/{pid}/stat")' in audit
+    assert 'elif age is None:' in audit
+
