@@ -67,6 +67,27 @@ class MonthlyReportCoordinatorTests(unittest.TestCase):
         self.assertEqual(len(reviewed["accepted_items"]), 1)
         assert_publish_allowed(reviewed)
 
+    def test_confluence_publish_helper_preserves_details_macro_user_mention_and_attachments(self) -> None:
+        from confluence_publish_helper import (
+            format_user_mention,
+            link_attachments_in_storage_html,
+            wrap_page_properties_details,
+        )
+
+        mention = format_user_mention(user_key="ff808181692c65570169472f1ab10083")
+        self.assertIn('ri:userkey="ff808181692c65570169472f1ab10083"', mention)
+
+        wrapped = wrap_page_properties_details("<table><tr><th>Date</th><td>27 Nov 2026</td></tr></table>")
+        self.assertIn('ac:name="details"', wrapped)
+        self.assertEqual(wrap_page_properties_details(wrapped), wrapped)
+
+        linked = link_attachments_in_storage_html(
+            "<p>See <code>VPP_TEST_SOP.md</code> and TESTING_LESSONS_LEARNED.md</p>",
+            ["VPP_TEST_SOP.md", "TESTING_LESSONS_LEARNED.md"],
+        )
+        self.assertIn('<ac:link><ri:attachment ri:filename="VPP_TEST_SOP.md" /></ac:link>', linked)
+        self.assertIn('<ac:link><ri:attachment ri:filename="TESTING_LESSONS_LEARNED.md" /></ac:link>', linked)
+
 
 if __name__ == "__main__":
     unittest.main()
