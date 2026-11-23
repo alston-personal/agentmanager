@@ -2553,3 +2553,13 @@ Implemented `agent_core/paw_clone_pool.py` (`PawClonePool`, `PawCloneTask`, `Paw
 - **Isolated worktree lifecycle**: spawns `paw-clone-<n>-<task_id>` worktrees per task and guarantees worktree removal and lock release on both completion and failure.
 - **Experience return**: automatically submits completion/failure experience cards to `agent_core.atlas_inbox.submit_experience_card` for single-writer consolidation.
 - **Verification**: `tests/test_paw_clone_pool.py` (3/3 PASS) covering parallel isolated writes, duplicate claim/capacity enforcement, Atlas inbox consolidation, and failure lock release + retry.
+
+
+### 2026-11-23 — Evolvable Knowledge Relation Index & Recall-before-Act (`KG-LINK-01..02`)
+
+Implemented `agent_core/knowledge_relation_index.py` following the **Immutable Raw Data + Evolvable Index Layer** architecture:
+
+- **Read-only Raw Data**: indexes `$AGENT_DATA_ROOT/projects/*/STATUS.md`, `personas/*/pitfalls_guardrails.md`, and `personas/*/consolidated_experiences.jsonl` without mutating any raw source file.
+- **Rebuildable Relation Graph**: writes versioned `$AGENT_DATA_ROOT/knowledge/relation_graph.json` (`agentos.relation-graph/v1`) where every node and edge carries a `raw_ref` pointer back to the exact raw file/line/record.
+- **Recall-before-Act (`recall_for_task`)**: retrieves relevant guardrails, cross-project experiences, and related projects with `raw_ref` pointers before task execution.
+- **Verification**: `tests/test_knowledge_relation_index.py` (2/2 PASS) verifying byte-for-byte raw data immutability and cross-project recall accuracy.
