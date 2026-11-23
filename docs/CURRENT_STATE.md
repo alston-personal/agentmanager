@@ -4,6 +4,14 @@ Added `.agent/skills/monthly_report` establishing a two-tier cross-node monthly 
 
 ---
 
+## 2026-11-23 — #1682 Runtime Converge Dual-Track Compatibility (`main` + `core/integration`)
+
+1. **Pre-cutover compatibility bridge for PR #2366**:
+   - Expanded `ALLOWED_SOURCE_REFS` in `agent_core/runtime_converge_contract.py` from `{"core/integration"}` to `{"main", "core/integration"}` so existing `node.runtime.converge` clients remain unbroken during the `#1682` cutover to `main`-only Core bundle deployment, while arbitrary branches remain fail-closed.
+   - Verified with `tests/test_runtime_converge_contract.py` and `tests/test_runtime_converge_action_relay.py` (57/57 PASS).
+
+---
+
 ## 2026-11-23 — Confluence Page Properties / User Mention Guard & Browser-Gated Redmine QA Skill
 
 1. **Confluence publish helper hardening** (`.agent/skills/monthly_report/scripts/confluence_publish_helper.py`):
