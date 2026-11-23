@@ -704,20 +704,22 @@ def test_teams_only_dispatch_reuses_registered_intent_and_exact_inputs():
         payload={
             "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
             "ref": "main",
-            "inputs": {"teams_only": "true"},
+            "inputs": {"teams_only": "true", "expected_main_sha": "a" * 40},
         },
     )
     assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
-    assert params["inputs"] == {"teams_only": "true"}
+    assert params["inputs"] == {"teams_only": "true", "expected_main_sha": "a" * 40}
 
 
 @pytest.mark.parametrize("ref,inputs", [
-    ("core/integration", {"teams_only": "true"}),
+    ("core/integration", {"teams_only": "true", "expected_main_sha": "a" * 40}),
     ("main", {}),
-    ("main", {"teams_only": "false"}),
-    ("main", {"teams_only": "True"}),
-    ("main", {"teams_only": True}),
-    ("main", {"teams_only": "true", "extra": "1"}),
+    ("main", {"teams_only": "true"}),
+    ("main", {"teams_only": "true", "expected_main_sha": "b" * 40}),
+    ("main", {"teams_only": "false", "expected_main_sha": "a" * 40}),
+    ("main", {"teams_only": "True", "expected_main_sha": "a" * 40}),
+    ("main", {"teams_only": True, "expected_main_sha": "a" * 40}),
+    ("main", {"teams_only": "true", "expected_main_sha": "a" * 40, "extra": "1"}),
 ])
 def test_teams_cutover_bootstrap_rejects_any_other_dispatch_before_side_effects(
     tmp_path, monkeypatch, ref, inputs,
@@ -740,16 +742,18 @@ def test_teams_cutover_bootstrap_rejects_any_other_dispatch_before_side_effects(
             "inputs": inputs,
         },
     }
-    with pytest.raises(ValueError, match="not allowlisted|only allows exact"):
-        bc._validate_request(tmp_path / "teams-cutover.request.json", req)
+    with pytest.raises(ValueError, match="not allowlisted|requires exact"):
+        bc._validate_request(tmp_path / "teams-cutover-test.request.json", req)
 
 
 @pytest.mark.parametrize("workflow,ref,inputs", [
-    ("oracle-core-bundle-immutable-runtime-convergence.yml", "core/integration", {"teams_only": "true"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "core/integration", {"teams_only": "true", "expected_main_sha": "a" * 40}),
     ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {}),
-    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "false"}),
-    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": True}),
-    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "true", "extra": "yes"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "true"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "true", "expected_main_sha": "b" * 40}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "false", "expected_main_sha": "a" * 40}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": True, "expected_main_sha": "a" * 40}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "true", "expected_main_sha": "a" * 40, "extra": "yes"}),
 ])
 def test_teams_cutover_action_relay_rejects_unsafe_targets_without_gh(
     monkeypatch, workflow, ref, inputs,
@@ -786,7 +790,7 @@ def test_teams_cutover_relay_rejects_stale_main_before_workflow_dispatch(monkeyp
         "repository": "alston-personal/agentmanager",
         "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
         "ref": "main",
-        "inputs": {"teams_only": "true"},
+        "inputs": {"teams_only": "true", "expected_main_sha": "a" * 40},
         "expected_head_sha": "a" * 40,
     })
     assert result["ok"] is False
@@ -810,7 +814,7 @@ def test_teams_cutover_relay_must_verify_main_before_gh_run(monkeypatch):
         "repository": "alston-personal/agentmanager",
         "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
         "ref": "main",
-        "inputs": {"teams_only": "true"},
+        "inputs": {"teams_only": "true", "expected_main_sha": "a" * 40},
         "expected_head_sha": "a" * 40,
     })
     assert result["ok"] is False
@@ -837,7 +841,7 @@ def test_teams_only_dispatch_sends_only_fixed_fields_with_verified_main(monkeypa
                 "/usr/bin/gh", "workflow", "run",
                 "oracle-core-bundle-immutable-runtime-convergence.yml",
                 "--repo", "alston-personal/agentmanager",
-                "--ref", "main", "-f", "teams_only=true",
+                "--ref", "main", "-f", f"expected_main_sha={sha}", "-f", "teams_only=true",
             ]
             return {"returncode": 0, "stdout": "", "stderr": ""}
         if argv[:3] == ["/usr/bin/gh", "run", "list"]:
@@ -852,7 +856,7 @@ def test_teams_only_dispatch_sends_only_fixed_fields_with_verified_main(monkeypa
         "repository": "alston-personal/agentmanager",
         "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
         "ref": "main",
-        "inputs": {"teams_only": "true"},
+        "inputs": {"teams_only": "true", "expected_main_sha": sha},
         "expected_head_sha": sha,
     })
     assert result["ok"] is True

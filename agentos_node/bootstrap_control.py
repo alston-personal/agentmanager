@@ -323,8 +323,15 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         elif (workflow, ref) == ("oracle-core-bundle-immutable-runtime-convergence.yml", "main"):
             # The workflow's default mode mutates the whole Core bundle.
             # Caller must explicitly select the isolated Teams-only mode.
-            if inputs != {"teams_only": "true"}:
-                raise ValueError("Teams cutover only allows exact teams_only=true")
+            declared_source = str(params.get("source_commit") or "")
+            if (
+                not COMMIT_RE.fullmatch(declared_source)
+                or inputs != {
+                    "teams_only": "true",
+                    "expected_main_sha": declared_source,
+                }
+            ):
+                raise ValueError("Teams cutover requires exact main SHA and teams_only=true")
         else:
             raise ValueError("GitHub Actions dispatch target is not allowlisted")
     if unknown:

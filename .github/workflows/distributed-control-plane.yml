@@ -28,6 +28,13 @@ jobs:
           if [[ -L CLAUDE.md ]] && [[ "$(readlink CLAUDE.md)" == "/home/ubuntu/agent-data/templates/CLAUDE.md" ]]; then
             rm -- CLAUDE.md
           fi
+      - name: Initialize isolated hosted registry roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          data_root="$RUNNER_TEMP/agent-data"
+          mkdir -p "$data_root/governance" "$data_root/realm"
+          printf 'AGENT_DATA_ROOT=%s\nAGENTOS_DATA_ROOT=%s\n' "$data_root" "$data_root" >> "$GITHUB_ENV"
       - run: python -m pip install pytest pyyaml
       - run: >-
           python -m pytest -q --import-mode=importlib --rootdir=tests --ignore=CLAUDE.md
@@ -46,4 +53,8 @@ jobs:
           tests/test_executor_working_set.py tests/test_control_plane.py
           tests/test_node_registry_v01.py tests/test_node_registry_recovery.py
           tests/test_runtime_ownership.py tests/test_control_plane_inspection.py
+          tests/test_release_authorization.py
+          tests/test_release_epoch_store.py
+          tests/test_single_action_relay_github_dispatch.py tests/test_runner_window.py
+          tests/test_action_relay.py
       - run: bash -n scripts/deploy_distributed_control_plane.sh

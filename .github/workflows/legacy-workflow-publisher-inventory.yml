@@ -1,0 +1,153 @@
+name: Legacy Branch Workflow Publisher Inventory (Read Only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/legacy-workflow-publisher-inventory.yml'
+      - 'scripts/audit_legacy_workflow_publishers.py'
+      - 'scripts/compare_workflow_publisher_inventory.py'
+      - 'scripts/audit_workflow_provider_status.py'
+      - 'tests/test_audit_workflow_provider_status.py'
+      - 'scripts/audit_workflow_recent_runs.py'
+      - 'tests/test_audit_workflow_recent_runs.py'
+      - 'tests/test_audit_legacy_workflow_publishers.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify scanner contract without external effects
+        run: |
+          python -m pip install 'PyYAML>=6,<7'
+          python -m unittest tests.test_audit_legacy_workflow_publishers tests.test_audit_workflow_provider_status tests.test_audit_workflow_recent_runs
+      - name: Fetch only the old branch source as data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin             +refs/heads/core/integration:refs/remotes/origin/core/integration
+          sha="$(git rev-parse refs/remotes/origin/core/integration)"
+          test "${#sha}" = 40
+          printf 'legacy_source_sha=%s\n' "$sha"
+          mkdir -p "$RUNNER_TEMP/legacy-workflow-snapshot"
+          git archive refs/remotes/origin/core/integration .github/workflows .agentos/governance/legacy-direct-oracle-workflows.txt             | tar -xf - -C "$RUNNER_TEMP/legacy-workflow-snapshot"
+      - name: Inventory ALL legacy workflows without executing them
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_legacy_workflow_publishers.py             --root "$RUNNER_TEMP/legacy-workflow-snapshot"             --output "$RUNNER_TEMP/legacy-workflow-census.json"             --expected-count 453 \
+            --quarantine-list "$RUNNER_TEMP/legacy-workflow-snapshot/.agentos/governance/legacy-direct-oracle-workflows.txt"
+          python - "$RUNNER_TEMP/legacy-workflow-census.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("## Legacy Workflow Census (read-only)")
+          print("Entire core/integration source inventory. Static flags are NOT provider enabled-state or deployed-version proof.")
+          for k in ("workflow_count", "legacy_push_count", "mutating_legacy_push_count",
+                    "priority_review_count"):
+              print("- " + k + ": " + str(d[k]))
+          print("- Full per-path classification is in the attached JSON artifact.")
+          PY
+      - name: Fetch protected main workflow source as data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          main_sha="$(git rev-parse FETCH_HEAD)"
+          test "${#main_sha}" = 40
+          printf 'main_source_sha=%s\n' "$main_sha"
+          mkdir -p "$RUNNER_TEMP/main-workflow-snapshot"
+          git archive FETCH_HEAD .github/workflows \
+            | tar -xf - -C "$RUNNER_TEMP/main-workflow-snapshot"
+      - name: Scan all main workflows and compare both branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_legacy_workflow_publishers.py \
+            --root "$RUNNER_TEMP/main-workflow-snapshot" \
+            --output "$RUNNER_TEMP/main-workflow-census.json" \
+            --expected-count 617
+          python scripts/compare_workflow_publisher_inventory.py \
+            --legacy "$RUNNER_TEMP/legacy-workflow-census.json" \
+            --main "$RUNNER_TEMP/main-workflow-census.json" \
+            --output "$RUNNER_TEMP/cross-branch-workflow-compare.json"
+          python - "$RUNNER_TEMP/cross-branch-workflow-compare.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("## Main vs core/integration source comparison")
+          for key in ("legacy_root_workflows", "main_root_workflows", "common_paths",
+                      "identical_path_source", "different_source_count"):
+              print("- " + key + ": " + str(d[key]))
+          for key in ("legacy_mutating_push_candidates",
+                      "legacy_mutating_push_missing_from_main",
+                      "legacy_mutating_push_diverged_on_main",
+                      "main_manual_mutating_candidates"):
+              print("- " + key + ": " + str(len(d[key])))
+          print("Source signals only, no production mutation or provider state.")
+          PY
+      - name: Read GitHub provider Workflow state (no changes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_workflow_provider_status.py \
+            --source "$RUNNER_TEMP/legacy-workflow-census.json" \
+            --main "$RUNNER_TEMP/main-workflow-census.json" \
+            --output "$RUNNER_TEMP/workflow-provider-state.json"
+          python - "$RUNNER_TEMP/workflow-provider-state.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("## GitHub provider Workflow states (read-only)")
+          print("- provider_listed_workflows: " + str(d["provider_listed_workflows"]))
+          print("- provider_not_in_either_branch_active: " + str(d["provider_not_in_either_branch_active_count"]))
+          for k, v in sorted(d["legacy_push_mutating_state_counts"].items()):
+              print("- legacy_push_mutating_" + k + ": " + str(v))
+          print("Provider enabled-state is not proof a branch job can execute or deploy.")
+          PY
+      - name: Read recent GitHub Actions run evidence (no workflow execution)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_workflow_recent_runs.py \
+            --provider "$RUNNER_TEMP/workflow-provider-state.json" \
+            --output "$RUNNER_TEMP/workflow-recent-run-triage.json" \
+            --days 30 --max-pages 30
+          python - "$RUNNER_TEMP/workflow-recent-run-triage.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d=json.load(open(sys.argv[1],encoding="utf-8"))
+          print("## 30-day workflow activity triage (read-only)")
+          print("- pagination_incomplete: " + str(d["pagination_incomplete"]))
+          print("- run_rows_observed: " + str(d["run_rows_observed"]))
+          for key,value in sorted(d["priority_counts"].items()):
+              print("- " + key + ": " + str(value))
+          print("No observed run does not mean disabled. Successful Actions run does not prove production deployment.")
+          PY
+      - name: Upload non-secret static inventory artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-workflow-publisher-inventory
+          path: |
+            ${{ runner.temp }}/legacy-workflow-census.json
+            ${{ runner.temp }}/main-workflow-census.json
+            ${{ runner.temp }}/cross-branch-workflow-compare.json
+            ${{ runner.temp }}/workflow-provider-state.json
+            ${{ runner.temp }}/workflow-recent-run-triage.json
+          retention-days: 7
+          if-no-files-found: warn

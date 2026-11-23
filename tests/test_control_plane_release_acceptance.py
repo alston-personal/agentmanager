@@ -263,7 +263,9 @@ def test_teams_live_cutover_requires_explicit_existing_operator_dispatch():
 
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml").read_text(encoding="utf-8")
-    assert "branches: [core/integration]" in workflow
+    assert "\n  push:" not in workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    assert "expected_main_sha:" in workflow
+    assert 'test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"' in workflow
     assert "teams_only:" in workflow
     assert "teams-immutable-cutover:" in workflow
     assert "inputs.teams_only == true" in workflow

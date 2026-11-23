@@ -60,7 +60,8 @@ class RealmInstallerRevisionTests(unittest.TestCase):
         self.assertIn("realm_fabric_effective_unit_fence_v1", body)
         self.assertIn("unrecognized runtime-generation.conf; refusing mutation", body)
         self.assertIn("quarantine_legacy_runtime_generation_dropin", body)
-        self.assertEqual(body.count("'installer_revision': 'realm-fabric-effective-unit-fence/v1'"), 2)
+        # One effective installer, no shadowed historical duplicate.
+        self.assertEqual(body.count("'installer_revision': 'realm-fabric-effective-unit-fence/v1'"), 1)
 
 
 if __name__ == "__main__":

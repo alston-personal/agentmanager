@@ -6,43 +6,19 @@ name: Oracle Core Bundle Immutable Runtime Convergence
 # employee-worker-hotset-recovery-20261012
 # system-worker-post-cutover-verification-20261012
 
+# Deployment is operator-only from protected main; no legacy branch push trigger.
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
-      - '.agent/scripts/agentos-employee-worker-host.service'
-      - '.agent/scripts/agentos-employee-worker-host-system.service'
-      - 'scripts/install_systemd_user.sh'
-      - 'scripts/install_services.py'
-      - 'scripts/work_completion.py'
-      - 'scripts/issue_work_intake.py'
-      - 'scripts/approved_wow_paw_handoff.py'
-      - 'scripts/completion_watchdog_tick.py'
-      - 'schedule.yaml'
-      - 'tests/test_completion_watchdog_tick.py'
-      - 'tests/test_approved_wow_paw_handoff.py'
-      - 'tests/test_issue_work_intake.py'
-      - '.agent/roles/**'
-      - 'agent_core/role_runtime.py'
-      - 'agent_core/employee_skills.py'
-      - 'agentos_node/employee_wake_node.py'
-      - 'agentos_node/hermes_worker.py'
-      - 'agentos_node/hermes_worker_cli.py'
-      - 'agentos_node/hermes_metadata_feed.py'
-      - 'agent_core/hermes_scan_policy.py'
-      - 'agent_core/hermes_github_scan.py'
-      - 'agent_core/hermes_due_cycle.py'
-      - 'agentos_node/product_employee_worker.py'
-      - 'agentos_node/completion_470_status_provider.py'
-      - 'agentos_node/product_employee_worker_cli.py'
-      - 'agentos_node/employee_worker_host_runtime.py'
-      - 'governance/employee-worker-adapters-v2.json'
-      - 'governance/employee-skills.json'
-      - 'governance/paw-employee.json'
-      - 'scripts/bootstrap_product_employees.py'
   workflow_dispatch:
     inputs:
+      expected_main_sha:
+        description: "Required exact protected main commit SHA (40 lowercase hex)"
+        required: true
+        type: string
+      core_bundle_approved:
+        description: "Explicit operator confirmation for broad Core bundle cutover"
+        required: true
+        type: boolean
+        default: false
       teams_only:
         description: "Operator-approved exact-main Teams-only cutover (never broad Core)"
         required: false
@@ -87,20 +63,43 @@ jobs:
             'python3 -' <<'PY'
           import json, re, subprocess
           from pathlib import Path
+
           def prop(key):
               return subprocess.check_output(
                   ["systemctl", "--user", "show", "teams-commander.service",
                    "-p", key, "--value"], text=True, timeout=5
               ).strip()
+
           unit = Path("/home/ubuntu/.config/systemd/user/teams-commander.service")
           source = unit.read_text(encoding="utf-8")
+          workdir = prop("WorkingDirectory")
+          pid = prop("MainPID")
+          mutable = "/home/ubuntu/agentmanager"
+          release_root = "/home/ubuntu/agent-data/releases/core/"
+          immutable_release = False
+          if re.fullmatch(r"[1-9][0-9]*", pid) and workdir.startswith(release_root):
+              release_sha = workdir[len(release_root):]
+              if re.fullmatch(r"[0-9a-f]{40}", release_sha):
+                  try:
+                      pid_cwd = str(Path("/proc", pid, "cwd").resolve(strict=True))
+                      installed_sha = subprocess.check_output(
+                          ["git", "-C", workdir, "rev-parse", "HEAD"],
+                          text=True, timeout=5,
+                      ).strip()
+                      immutable_release = (
+                          pid_cwd == workdir and installed_sha == release_sha
+                          and (Path(workdir) / "scripts/teams_bridge.py").is_file()
+                      )
+                  except (OSError, subprocess.SubprocessError):
+                      immutable_release = False
+          mutable_original = workdir == mutable
           checks = {
               "active": prop("ActiveState") == "active",
               "expected_unit_fragment": prop("FragmentPath") == str(unit),
               "unit_file_not_symlink": not unit.is_symlink(),
-              "unit_workdir_mutable": prop("WorkingDirectory") == "/home/ubuntu/agentmanager",
+              "recognized_prior_owner": mutable_original or immutable_release,
               "unit_text_exact_workdir": source.count(
-                  "WorkingDirectory=" + prop("WorkingDirectory")
+                  "WorkingDirectory=" + workdir
               ) == 1,
               "relative_teams_script_in_exec": bool(re.search(
                   r"(?m)^ExecStart=/[^\s]+[\s]+scripts/teams_bridge\.py[\s]*$", source
@@ -111,8 +110,13 @@ jobs:
               ),
               "no_dropins": not prop("DropInPaths"),
           }
-          print(json.dumps({"schema": "agentos.teams-single-unit-preflight/v1",
-                            "checks": checks}, sort_keys=True))
+          owner_class = (
+              "legacy_mutable" if mutable_original
+              else "validated_immutable_release" if immutable_release
+              else "unrecognized"
+          )
+          print(json.dumps({"schema": "agentos.teams-single-unit-preflight/v2",
+                            "owner_class": owner_class, "checks": checks}, sort_keys=True))
           if not all(checks.values()):
               raise SystemExit(2)
           PY
@@ -130,6 +134,16 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - name: Fence Teams cutover to exact approved main SHA
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_MAIN_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          test "${GITHUB_REF_NAME}" = main
+          test "${GITHUB_REF_TYPE}" = branch
+          test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
@@ -160,7 +174,7 @@ jobs:
           echo "teams_cutover_other_core_units=UNTOUCHED"
 
   converge:
-    if: (github.event_name == 'workflow_dispatch' && inputs.teams_only != true) || (github.event_name == 'push' && github.ref_name == 'core/integration')
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.teams_only != true && inputs.core_bundle_approved == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -168,6 +182,16 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - name: Fence broad deploy to explicitly acknowledged exact main SHA
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_MAIN_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          test "${GITHUB_REF_NAME}" = main
+          test "${GITHUB_REF_TYPE}" = branch
+          test "${GITHUB_SHA}" = "${EXPECTED_MAIN_SHA}"
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
