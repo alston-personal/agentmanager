@@ -25,6 +25,7 @@ import uuid
 
 from runtime_core.canonical_ir import CanonicalIR
 
+from .dispatch_sweep_health import publish_sweep_heartbeat
 from .distributed_control_plane import DistributedControlPlane
 
 
@@ -674,13 +675,21 @@ class RuntimeDispatcher:
         *,
         interval_seconds: float = 5.0,
         limit: int = 100,
+        heartbeat_path: str | None = None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("interval_seconds must be > 0")
         failure_reported = False
         while not stop_event.is_set():
             try:
-                self.dispatch_pending(limit=limit)
+                sweep_results = self.dispatch_pending(limit=limit)
+                # Per-task exceptions are returned as dispatcher_error rather
+                # than raised; they must not generate a success heartbeat.
+                if any(
+                    isinstance(item, dict) and item.get("status") == "dispatcher_error"
+                    for item in sweep_results
+                ):
+                    raise RuntimeError("dispatch_sweep_task_error")
             except Exception as exc:
                 # A transient SQLite lock or unavailable store must not kill
                 # the only recovery sweep thread. Never log error details,
@@ -695,4 +704,13 @@ class RuntimeDispatcher:
                 if failure_reported:
                     logging.getLogger(__name__).info("runtime dispatch sweep recovered")
                 failure_reported = False
+            if heartbeat_path:
+                try:
+                    publish_sweep_heartbeat(heartbeat_path, healthy=not failure_reported)
+                except OSError:
+                    # Telemetry must not stop dispatch. A missing heartbeat
+                    # remains UNKNOWN/FAIL in the independent live audit.
+                    logging.getLogger(__name__).warning(
+                        "runtime dispatch heartbeat unavailable"
+                    )
             stop_event.wait(interval_seconds)

@@ -163,7 +163,7 @@ def test_gateway_entrypoint_starts_existing_sweep_for_enabled_push_target(
 
     started = threading.Event()
 
-    def observed_sweep(self, stop_event, *, interval_seconds, limit):
+    def observed_sweep(self, stop_event, *, interval_seconds, limit, heartbeat_path=None):
         assert interval_seconds == 0.01
         assert limit == 7
         assert "bridge-a" in self.targets
