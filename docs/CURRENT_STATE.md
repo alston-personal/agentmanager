@@ -2543,3 +2543,13 @@ The subsequent draft candidate adds a separate non-sensitive `missing_push_pull_
 ### 2026-11-22 — Cross-registry capability provenance check (#2365)
 
 A crucial distinction is now explicit: the Distributed Control Plane stores its own Node manifests in SQLite `nodes.manifest_json`, while the existing Realm `agent_core.node_registry.NodeRegistry` reads a separate `$AGENT_DATA_ROOT/realm/nodes.json` with `agentos.node-registry/v0.1` schema and a different capability field shape. Absence in Control Plane SQLite does **not** establish absence in the Realm Node Registry. To avoid a duplicate reconciler or broad dispatcher changes, the existing Oracle read-only audit now parses that Realm JSON **as data**, with bounded size/schema/symlink checks, and compares only untargeted submitted Canonical IR capabilities to Realm registrations. The audit exports two aggregate counts and registry read-state only, never task/capability/node identities or payloads. Realm presence is historical registration evidence, **not** proof of availability, authorization, or safe cross-Realm dispatch. No registry data is copied into the Control Plane or automatically synchronized; actual owner/reason for the two missing capability labels still requires governed private reconciliation.
+
+
+### 2026-11-23 — Paw Clone Pool (`PAW-CLONE-01..03`)
+
+Implemented `agent_core/paw_clone_pool.py` (`PawClonePool`, `PawCloneTask`, `PawCloneHandle`, `PawCloneResult`) to enable isolated `git worktree` parallel execution for `HephaestusPawWorker`:
+
+- **Atomic task locking (`O_CREAT | O_EXCL`)** prevents duplicate claims across concurrent clones (`TaskAlreadyClaimedError`), bounded by `max_clones` (`PoolCapacityExceededError`).
+- **Isolated worktree lifecycle**: spawns `paw-clone-<n>-<task_id>` worktrees per task and guarantees worktree removal and lock release on both completion and failure.
+- **Experience return**: automatically submits completion/failure experience cards to `agent_core.atlas_inbox.submit_experience_card` for single-writer consolidation.
+- **Verification**: `tests/test_paw_clone_pool.py` (3/3 PASS) covering parallel isolated writes, duplicate claim/capacity enforcement, Atlas inbox consolidation, and failure lock release + retry.
