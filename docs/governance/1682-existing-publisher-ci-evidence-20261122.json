@@ -1,0 +1,73 @@
+{
+  "schema": "agentos.publisher-census-evidence/v1",
+  "status": "read-only-ci-observed",
+  "observed_date": "2026-11-22",
+  "source": "PR #2366 existing read-only workflow publisher inventory",
+  "workflow_run_url": "https://github.com/alston-personal/agentmanager/actions/runs/45000061954",
+  "artifact_url": "https://github.com/alston-personal/agentmanager/actions/runs/45000061954/artifacts/14745183548",
+  "workflow_run_id": 45000061954,
+  "artifact_id": 14745183548,
+  "conclusion": "success",
+  "pinned_main_sha": "77138a48a2661cd4e46f15c605d1db010367bc1a",
+  "pinned_legacy_sha": "8c49a4de94b2796b3b33bfa3abd94874a97bd3fa",
+  "source_inventory": {
+    "main": {
+      "all_yaml_files": 617,
+      "root_workflow_files": 613,
+      "history_nested_files": 4,
+      "root_legacy_push": 248,
+      "root_legacy_push_mutating_signal": 119,
+      "all_mutating_signal": 267,
+      "all_manual_review_required": 176,
+      "no_mutating_signal_observed": 174,
+      "priority_review_count": 240,
+      "unreadable": 0
+    },
+    "legacy": {
+      "all_yaml_files": 453,
+      "root_workflow_files": 449,
+      "history_nested_files": 4,
+      "root_legacy_push": 254,
+      "root_legacy_push_mutating_signal": 122,
+      "all_mutating_signal": 215,
+      "all_manual_review_required": 114,
+      "no_mutating_signal_observed": 124,
+      "priority_review_count": 198,
+      "unreadable": 0
+    },
+    "cross_branch": {
+      "common_root_paths": 449,
+      "identical_source": 400,
+      "different_source": 49,
+      "legacy_only": 0,
+      "main_only": 164,
+      "legacy_mutating_push_diverged_on_main": 10,
+      "main_manual_mutating_candidates": 153
+    },
+    "legacy_quarantine_baseline": {
+      "entries": 150,
+      "paths_present": 150,
+      "mutating_legacy_push_not_in_baseline": 119
+    }
+  },
+  "provider": {
+    "listed_workflow_identities": 1076,
+    "unique_paths": 1076,
+    "active_legacy_push_mutating_candidates": 122,
+    "active_not_in_either_branch_source_inventory": 463
+  },
+  "recent_activity": {
+    "observed_run_rows": 1502,
+    "legacy_branch_run_rows": 502,
+    "legacy_push_candidate_recent_count": 16,
+    "pagination_incomplete": true
+  },
+  "caveats": [
+    "The workflow scanner classifies source code signals, not whether commands actually execute on Oracle.",
+    "GitHub provider active state does not prove a branch trigger can run or access live credentials.",
+    "Provider identities outside both pinned source trees may be historical, removed, or still referenced; inspect individually.",
+    "30-day activity sample is incomplete due to pagination cap; 16 is not an exhaustive active execution count.",
+    "This CI uses two pinned source commits; no live Oracle systemd permissions/PID/rollback evidence was fetched.",
+    "No rights to disable workflows or deploy are inferred from this artifact."
+  ]
+}
