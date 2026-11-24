@@ -1,3 +1,15 @@
+## 2026-11-24 — Gaia Creation Gate Onboarding & Full Pantheon Blind Verification (PR #2382)
+
+1. **Gaia Earth Mother & Creation Gate Onboarding (`system.gaia` & `GaiaCreationGateWorker`)**:
+   - Formalized `system.gaia` (大地母神 蓋亞 Gaia / Earth Mother & Proposal Creation Gate) into `.agent/roles/registry.yaml` and `.agent/roles/instances/system_gaia.md`.
+   - Connected `agent_core/gaia_intake.py` and `agent_core/gaia_creation_gate.py` to `GaiaCreationGateWorker`, enforcing read-only intake probe and fail-closed creation boundary.
+   - Sealed by Rhea Role Steward (`scripts/rhea_role_steward.py --seal`) with zero phantom violations.
+2. **Full Pantheon Role Contracts Expansion (`agent_core/role_contracts.json`)**:
+   - Expanded role contracts to cover all 26 system, sector, and project roles (including `system.gaia`, `tiandao-cangxuan`, `tiandao-geek`).
+   - Verified 100% PASS across all roles under independent blind verifier without self-certification.
+
+---
+
 ## 2026-11-24 — Universal Role Contracts & Independent Blind Verification Network (PR #2381)
 
 1. **Physical Role Contracts Mapping (`agent_core/role_contracts.json`)**:

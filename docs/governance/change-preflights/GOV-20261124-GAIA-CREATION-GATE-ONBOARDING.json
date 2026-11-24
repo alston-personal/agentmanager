@@ -1,0 +1,58 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261124-GAIA-CREATION-GATE-ONBOARDING",
+  "goal": "將大地母神蓋亞 (system.gaia) 正式登錄眾神殿註冊表與 Worker 實裝，補齊全神祇角色契約與不知情盲審覆蓋",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_role_runtime.py",
+    "tests/test_role_reality.py",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    ".agent/roles/registry.yaml system.gaia 登錄",
+    ".agent/roles/instances/system_gaia.md 角色說明書",
+    "agent_core/base_pdca.py GaiaCreationGateWorker 實裝",
+    "agent_core/role_contracts.json 補齊全 26 位在席角色物理契約",
+    "docs/CURRENT_STATE.md 同步"
+  ],
+  "existing_capabilities": [
+    "沿用 BasePDCAWorker 基礎四相循環",
+    "沿用 gaia_intake.py 與 gaia_creation_gate.py 既有立案審核代碼",
+    "沿用 rhea_role_steward.py 物理印章防線"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "Rhea 瑞亞角色神殿：角色真實性封印蓋印權限",
+    "Gaia 立案閘門：專案提案重用與擴充審查權限"
+  ],
+  "failure_modes": [
+    "幽靈神祇：角色出現在名冊中卻無實體代碼與執行回執，現經 Rhea 印章物理阻斷",
+    "名冊缺漏：僅列舉部分角色造成審查盲點，現已全面盤點至 26 位"
+  ],
+  "implementation_plan": [
+    "在 .agent/roles/registry.yaml 登錄 system.gaia",
+    "建立 .agent/roles/instances/system_gaia.md",
+    "在 agent_core/base_pdca.py 實裝 GaiaCreationGateWorker 並接入盲審",
+    "執行 python3 scripts/rhea_role_steward.py --seal 完成合法蓋印",
+    "將全域 26 位角色（含 tiandao 雙道人與 gaia）全部納入 role_contracts.json 盲審網絡"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_role_reality -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py"
+  ],
+  "rollback_plan": [
+    "若引發執行異常，以 git revert 回滾 PR 提交，不影響底層 Runtime"
+  ],
+  "unknowns": [
+    "無"
+  ]
+}

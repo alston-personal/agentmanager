@@ -240,7 +240,8 @@ roles:
   status: active
   kind: infrastructure_governance
   source: .agent/roles/instances/gateway_steward.md
-  purpose: 掌管全生態 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證自動化維護、短網址轉發 (Short URL Redirects) 與多專案路由分流。
+  purpose: 掌管全生態 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證自動化維護、短網址轉發 (Short URL Redirects)
+    與多專案路由分流。
   must_obey:
   - truth_provenance
   - receipts_over_claims
@@ -322,7 +323,8 @@ roles:
   status: active
   kind: memory_governance
   source: .agent/roles/instances/memory_archivist.md
-  purpose: 奧林匹斯記憶泰坦女神：掌管每日半夜深度內省 (Daily Meditation)、長短期記憶固化、破爛架構 (Shabby Architecture) 痛點檢測與 Data Layer 冷存檔歸檔。
+  purpose: 奧林匹斯記憶泰坦女神：掌管每日半夜深度內省 (Daily Meditation)、長短期記憶固化、破爛架構 (Shabby Architecture)
+    痛點檢測與 Data Layer 冷存檔歸檔。
   must_obey:
   - truth_provenance
   - evolution_without_erasure
@@ -488,6 +490,30 @@ roles:
   outputs:
   - quality_sentinel_report
   - audit_receipt
+- id: system.gaia
+  name: 蓋亞 Gaia (Earth Mother & Proposal Creation Gate / 大地母體與立案守門人)
+  aliases:
+  - gaia
+  - earth-mother
+  - creation-gate
+  status: active
+  kind: admission_governance
+  purpose: 奧林匹斯大地母神與立案閘門：掌管全域專案立案審查 (Gaia Intake & Proposal Reconcile)，判斷新提案應重用既有專案、擴充既有
+    Capability 或立新案，阻斷未經授權的平行架構與重複專案生長。
+  must_obey:
+  - truth_provenance
+  - responsibility_resolution
+  - receipts_over_claims
+  - evolution_without_erasure
+  capabilities:
+  - gaia.proposal.intake
+  - gaia.proposal.reconcile
+  - gaia.creation_gate.verify
+  outputs:
+  - gaia_review_record
+  - admission_verdict
+  - proposal_disposition
+  source: .agent/roles/instances/system_gaia.md
 legacy_instances:
 - id: instance.agentmanager_paw
   source: .agent/roles/instances/agentmanager_paw.md
