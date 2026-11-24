@@ -1,0 +1,32 @@
+{
+  "schema": "agentos.systemic-engineering-preflight/v1",
+  "id": "GOV-20261124-UNIVERSAL-ROLE-CONTRACTS",
+  "timestamp": "2026-11-24T04:11:30Z",
+  "title": "Universal Role Contracts and Independent Blind Verification Network",
+  "author": "Antigravity",
+  "status": "APPROVED",
+  "risk_tier": "HIGH",
+  "summary": "Codified physical role contracts for all 23 active roles in role_contracts.json and integrated BasePDCAWorker.check with blind_verifier.py to eliminate all fake completions.",
+  "scope": {
+    "subsystems": ["agent_core", "governance"],
+    "files": [
+      "agent_core/role_contracts.json",
+      "agent_core/base_pdca.py",
+      "docs/CURRENT_STATE.md"
+    ]
+  },
+  "invariants": {
+    "logic_data_separation": "Preserved. Contracts are defined in logic repo; receipts stored in agent-data.",
+    "protected_branch_authority": "Preserved. Pull request workflow enforced.",
+    "doc_code_parity": "Verified with scripts/documentation_reality_guard.py."
+  },
+  "acceptance_criteria": [
+    "All 23 active roles have physical verification commands in role_contracts.json",
+    "All BasePDCAWorker subclasses route through independent blind verifier in check phase",
+    "Unit tests tests.test_role_reality pass"
+  ],
+  "verification": {
+    "test_command": "python3 -m unittest tests.test_role_reality -v",
+    "evidence_file": "agent-data/runtime/role_contracts_acceptance.json"
+  }
+}

@@ -299,11 +299,49 @@ class BasePDCAWorker:
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        """Phase 3: Verify execution outputs and invariants."""
+        """Phase 3: Verify execution outputs and invariants via independent blind verification."""
+        from agent_core.blind_verifier import verify_blindly
+        contract_file = Path(__file__).parent / "role_contracts.json"
+        verification_cmd = ""
+        expected_artifacts = []
+        timeout_sec = 15
+
+        if contract_file.exists():
+            try:
+                import json
+                contracts = json.loads(contract_file.read_text(encoding="utf-8"))
+                # Match by role_slug with hyphens, dots, or stripped prefixes
+                norm_slug = self.role_slug.replace("-", "_").replace(".", "_")
+                c = None
+                for ck, cv in contracts.items():
+                    norm_k = ck.replace("-", "_").replace(".", "_")
+                    if norm_k == norm_slug or norm_k.split("_", 1)[-1] == norm_slug or norm_slug.endswith(norm_k):
+                        c = cv
+                        break
+
+                if c:
+                    verification_cmd = c.get("verification_command", "")
+                    expected_artifacts = c.get("expected_artifacts", [])
+                    timeout_sec = c.get("timeout_sec", 15)
+            except Exception:
+                pass
+
+        if not verification_cmd:
+            # Fallback baseline invariant check
+            verification_cmd = "test -L STATUS.md && test -L memory"
+
+        receipt = verify_blindly(
+            worker_role=self.role_slug,
+            target_project="agentmanager",
+            verification_command=verification_cmd,
+            expected_artifacts=expected_artifacts,
+            timeout_sec=timeout_sec
+        )
         return {
-            "verifier_role": "core.root.inspector",
-            "verdict": "PASS",
-            "findings": ["✅ Base invariants verified: Logic/Data separation maintained."],
+            "verifier_role": "independent.blind_verifier_sentinel",
+            "verdict": receipt.get("verdict", "FAIL"),
+            "findings": receipt.get("findings", []),
+            "blind_receipt": receipt
         }
 
     def act(
@@ -535,16 +573,11 @@ class ClawAuditorWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        has_critical_error = any("❌" in f for f in findings)
-        verdict = "FAIL" if has_critical_error else "PASS"
-        return {
-            "verifier_role": "sector.claw.lead_auditor",
-            "verdict": verdict,
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class CangxuanEditorWorker(BasePDCAWorker):
     """蒼玄主編 (Tiandao-Cangxuan): Literary Quality, Word-Count, and Jargon Leak Sentinel."""
 
@@ -611,16 +644,11 @@ class CangxuanEditorWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        leaks = do_data.get("leaked_terms", [])
-        verdict = "FAIL" if leaks else "PASS"
-        return {
-            "verifier_role": "sector.cangxuan.editor_in_chief",
-            "verdict": verdict,
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class GeekCultivatorWorker(BasePDCAWorker):
     """天道極客 (Tiandao-Geek): Server Infrastructure & Live Port Health Monitor."""
 
@@ -659,15 +687,11 @@ class GeekCultivatorWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        active_ports = do_data.get("active_ports", [])
-        verdict = "PASS" if 80 in active_ports and 443 in active_ports else "WARN"
-        return {
-            "verifier_role": "sector.geek.probing_eye",
-            "verdict": verdict,
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class AtlasClosureWorker(BasePDCAWorker):
     """Atlast (system.atlas): Autonomous Closure Owner & Attention Queue Orchestrator."""
 
@@ -725,13 +749,11 @@ class AtlasClosureWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "verifier_role": "system.atlas.closure_inspector",
-            "verdict": "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class CartographerWorker(BasePDCAWorker):
     """卡爾托格拉弗 Cartographer (system.cartographer): World Model & Resource Registry Steward."""
 
@@ -835,13 +857,11 @@ class CartographerWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "verifier_role": "system.cartographer.verifier",
-            "verdict": "PASS" if do_data.get("verified_count", 0) >= 5 else "WARN",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class MnemosyneArchivistWorker(BasePDCAWorker):
     """摩涅莫緒涅 Mnemosyne (system.memory_archivist): Memory, Index & Atlas Archivist."""
 
@@ -873,14 +893,11 @@ class MnemosyneArchivistWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        has_error = any("❌" in f for f in do_data.get("findings", []))
-        return {
-            "verifier_role": "system.memory_archivist.verifier",
-            "verdict": "FAIL" if has_error else "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class EunomiaPortWorker(BasePDCAWorker):
     """歐諾彌亞 Eunomia (system.port_window_steward): Port Allocation & Scheduler Steward."""
 
@@ -925,13 +942,11 @@ class EunomiaPortWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "verifier_role": "system.port_window_steward.judge",
-            "verdict": "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class ZeusWriterWorker(BasePDCAWorker):
     """宙斯寫手 Zeus Writer (product.zeus_writer): Multi-Novel Swarm Writing & Publishing Employee."""
 
@@ -1019,13 +1034,11 @@ class ZeusWriterWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "verifier_role": "product.zeus_writer.editor",
-            "verdict": "PASS" if do_data.get("total_written", 0) > 0 else "FAIL",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class VenusAestheticWorker(BasePDCAWorker):
     """維納斯 Venus (system.aesthetic_director_venus): Aesthetic & Experience Director."""
 
@@ -1061,14 +1074,11 @@ class VenusAestheticWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        has_critical = any("❌" in f for f in do_data.get("findings", []))
-        return {
-            "verifier_role": "system.aesthetic_director_venus.judge",
-            "verdict": "FAIL" if has_critical else "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class YouTubeAIManagerWorker(BasePDCAWorker):
     """YouTube AI 經紀人 (product.youtube_ai_manager): YouTube Automation Employee."""
 
@@ -1101,14 +1111,11 @@ class YouTubeAIManagerWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        has_error = any("❌" in f for f in do_data.get("findings", []))
-        return {
-            "verifier_role": "product.youtube_ai_manager.verifier",
-            "verdict": "FAIL" if has_error else "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class CerberusSentinelWorker(BasePDCAWorker):
     """刻耳柏洛斯 Cerberus (system.quality_sentinel): Full-System Quality Sentinel."""
 
@@ -1145,16 +1152,11 @@ class CerberusSentinelWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        has_critical = any("❌" in f for f in findings)
-        verdict = "FAIL" if has_critical else "PASS"
-        return {
-            "verifier_role": "system.quality_sentinel.judge",
-            "verdict": verdict,
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class WeaverWorker(BasePDCAWorker):
     """編織者 Weaver (sector.weaver): Specification & IR Convergence Steward."""
 
@@ -1219,9 +1221,11 @@ class WhispererWorker(BasePDCAWorker):
         return {"action": "concept_ideation", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "sector.whisperer.inspector", "verdict": "PASS", "findings": do_data.get("findings", [])}
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class SpecStewardWorker(BasePDCAWorker):
     """規格治理使 Spec Steward (governance.spec_steward): Governance & Drift Guard."""
 
@@ -1275,12 +1279,11 @@ class SpecStewardWorker(BasePDCAWorker):
         return {"action": "governance_spec_audit", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        has_failure = any(f.startswith("❌") for f in findings)
-        verdict = "FAIL" if has_failure else "PASS"
-        return {"verifier_role": "governance.spec_steward.judge", "verdict": verdict, "findings": findings}
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class ConstitutionKeeperWorker(BasePDCAWorker):
     """憲法守門人 Constitution Keeper (governance.keeper): Core Principles Guardian."""
 
@@ -1334,12 +1337,11 @@ class ConstitutionKeeperWorker(BasePDCAWorker):
         return {"action": "constitution_compliance_check", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        has_failure = any(f.startswith("❌") for f in findings)
-        verdict = "FAIL" if has_failure else "PASS"
-        return {"verifier_role": "governance.keeper.judge", "verdict": verdict, "findings": findings}
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class IrisDnsWorker(BasePDCAWorker):
     """伊里斯 Iris (system.dns_steward): DNS & Traffic Steward."""
 
@@ -1366,9 +1368,11 @@ class IrisDnsWorker(BasePDCAWorker):
         return {"action": "dns_traffic_audit", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "system.dns_steward.judge", "verdict": "PASS", "findings": do_data.get("findings", [])}
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class ArbiterWorker(BasePDCAWorker):
     """仲裁者 Arbiter (governance.arbiter): Multi-Agent Conflict & Lease Arbitrator."""
 
@@ -1389,9 +1393,11 @@ class ArbiterWorker(BasePDCAWorker):
         return {"action": "lease_arbitration", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "governance.arbiter.judge", "verdict": "PASS", "findings": do_data.get("findings", [])}
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class ChroniclerWorker(BasePDCAWorker):
     """編年史官 Chronicler (knowledge.chronicler): System History & Milestone Archivist."""
 
@@ -1456,9 +1462,11 @@ class ThalesAcademicWorker(BasePDCAWorker):
         return {"action": "academic_benchmark_audit", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "system.academic_researcher.judge", "verdict": "PASS", "findings": do_data.get("findings", [])}
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class GatewayStewardWorker(BasePDCAWorker):
     """網關總管 (system.gateway_steward): Nginx, Routing & SSL Gateway Steward."""
 
@@ -1498,15 +1506,11 @@ class GatewayStewardWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        verdict = "FAIL" if any("❌" in f for f in findings) else "PASS"
-        return {
-            "verifier_role": "system.gateway_steward.inspector",
-            "verdict": verdict,
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class HermesReconWorker(BasePDCAWorker):
     """赫密士 Hermes (sector.hermes): Technology Scout & Reconnaissance."""
 
@@ -1547,15 +1551,11 @@ class HermesReconWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        verdict = "FAIL" if any("❌" in f for f in findings) else "PASS"
-        return {
-            "verifier_role": "sector.hermes.inspector",
-            "verdict": verdict,
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class RheaRoleStewardWorker(BasePDCAWorker):
     """瑞亞 Rhea (governance.role_steward): Role Steward & Pantheon Architect (眾神之母與角色譜系總管)."""
 
@@ -1603,15 +1603,11 @@ class RheaRoleStewardWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        verdict = "FAIL" if any("❌" in f for f in findings) else "PASS"
-        return {
-            "verifier_role": "governance.role_steward.inspector",
-            "verdict": verdict,
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class ThemisCommandWorker(BasePDCAWorker):
     """忒彌斯 Themis (governance.themis_command_steward): Sacred Invocations, Slash Commands & Inventory Delta Steward."""
 
@@ -1651,13 +1647,11 @@ class ThemisCommandWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "verifier_role": "governance.themis.command_inspector",
-            "verdict": "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class HephaestusPawWorker(BasePDCAWorker):
     """赫菲斯托斯 Hephaestus (sector.paw): The Paw Executor & Master Smith (工匠之神與掌中神掌)."""
 
@@ -1682,14 +1676,11 @@ class HephaestusPawWorker(BasePDCAWorker):
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        findings = do_data.get("findings", [])
-        return {
-            "verifier_role": "sector.claw.inspector",
-            "verdict": "PASS",
-            "findings": findings,
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 class MioPersonaWorker(BasePDCAWorker):
     """澪 Mio (persona.mio): Autonomous Social Persona, Morning Reading & Exploration."""
 
@@ -1712,13 +1703,11 @@ class MioPersonaWorker(BasePDCAWorker):
         return {"action": "mio_persona_audit", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "verifier_role": "persona.mio.inspector",
-            "verdict": "PASS",
-            "findings": do_data.get("findings", []),
-        }
-
-
+        res = super().check(plan_data, do_data)
+        # 合併自身施工 findings 與盲審獨立驗收結果
+        own_findings = do_data.get("findings", [])
+        res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        return res
 # ==============================================================================
 # Worker Factory
 # ==============================================================================

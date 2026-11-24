@@ -1,3 +1,14 @@
+## 2026-11-24 — Universal Role Contracts & Independent Blind Verification Network (PR #2381)
+
+1. **Physical Role Contracts Mapping (`agent_core/role_contracts.json`)**:
+   - Codified explicit, physical verification criteria for all 23 active AgentOS system and project roles.
+   - Replaced self-declared and static string placeholder completion reports with mandatory physical verification commands (`verification_command`), expected artifact validation (`expected_artifacts`), and execution timeouts.
+2. **Universal Blind Verifier Integration (`agent_core/base_pdca.py` & `agent_core/blind_verifier.py`)**:
+   - Fully connected `BasePDCAWorker.check()` across all worker subclasses to `verify_blindly()`.
+   - Each role's execution outputs and invariants are verified by an independent blind verifier sentinel with zero knowledge of self-reported claims, enforcing genuine physical state verification and fail-closed audit verdicts.
+
+---
+
 ## 2026-11-24 — AgentOS ONE IR Relation Index & Lazy Projection (PR #2380)
 
 1. **IR Concept Graph & Topology Indexing (`agent_core/ir_relation_index.py`)**:

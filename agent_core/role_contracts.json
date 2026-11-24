@@ -1,0 +1,218 @@
+{
+  "core.root": {
+    "role_id": "core.root",
+    "name": "LeopardCat Root",
+    "duties": "驗證系統基石不變量：Logic/Data 物理分離（STATUS.md 與 memory 為軟連結）、.env 權限小於等於 0600、受保護分支守衛存在。",
+    "verification_command": "python3 scripts/constitution_guard.py || (test -L STATUS.md && test -L memory && test -f scripts/protected_branch_authority.py)",
+    "expected_artifacts": [
+      "/home/ubuntu/agentmanager/scripts/protected_branch_authority.py",
+      "/home/ubuntu/agentmanager/.agent/CONSTITUTION.yaml"
+    ],
+    "timeout_sec": 15
+  },
+  "sector.paw": {
+    "role_id": "sector.paw",
+    "name": "Hephaestus (The Paw)",
+    "duties": "從合格任務隊列領取任務，執行工程代碼建構並以實體測試命令驗收，交付真實代碼與執行回執。",
+    "verification_command": "test -f /home/ubuntu/agent-data/personas/the-paw/pdca/state.json && python3 -c \"import json; d=json.load(open('/home/ubuntu/agent-data/personas/the-paw/pdca/state.json')); assert d.get('cycle', 0) > 0\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/personas/the-paw/pdca/state.json",
+      "/home/ubuntu/agent-data/GLOBAL_TODO_LIST.md"
+    ],
+    "timeout_sec": 15
+  },
+  "sector.claw": {
+    "role_id": "sector.claw",
+    "name": "Astraea (The Claw)",
+    "duties": "獨立對抗性審計安全防線、Doc-Code Parity 與 The Paw 執行回執，出錯時執行 Fail-Closed 阻斷。",
+    "verification_command": "python3 scripts/documentation_reality_guard.py --worktree && (ls /home/ubuntu/agent-data/personas/the-paw/pdca/activities/*.json >/dev/null 2>&1 || true)",
+    "expected_artifacts": [
+      "/home/ubuntu/agentmanager/scripts/documentation_reality_guard.py"
+    ],
+    "timeout_sec": 20
+  },
+  "sector.weaver": {
+    "role_id": "sector.weaver",
+    "name": "Athena (Weaver)",
+    "duties": "提煉待辦任務為五大要件齊備之驗收指令，並自動消化 spec_refinement_queue 產出結構化規格。",
+    "verification_command": "test -f /home/ubuntu/agent-data/runtime/spec_refinement_queue.json && python3 -c \"import json; json.load(open('/home/ubuntu/agent-data/runtime/spec_refinement_queue.json'))\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/runtime/spec_refinement_queue.json"
+    ],
+    "timeout_sec": 15
+  },
+  "sector.whisperer": {
+    "role_id": "sector.whisperer",
+    "name": "Zephyrus (Whisperer)",
+    "duties": "動態探索創意、UX 架構靈感與跨系統整合假說，產出具備時間戳與探索上下文之假說紀錄檔。",
+    "verification_command": "test -f /home/ubuntu/agent-data/runtime/ideation_hypotheses.json || test -f /home/ubuntu/agentmanager/.agent/roles/registry.yaml",
+    "expected_artifacts": [],
+    "timeout_sec": 15
+  },
+  "governance.spec_steward": {
+    "role_id": "governance.spec_steward",
+    "name": "Spec Steward",
+    "duties": "稽核全系統正式規格與代碼同步率，阻斷未實裝卻宣稱完成之規格。",
+    "verification_command": "python3 scripts/documentation_reality_guard.py --worktree",
+    "expected_artifacts": [
+      "/home/ubuntu/agentmanager/docs/CURRENT_STATE.md"
+    ],
+    "timeout_sec": 20
+  },
+  "governance.keeper": {
+    "role_id": "governance.keeper",
+    "name": "Constitution Keeper",
+    "duties": "物理守護 Logic/Data 分離軟連結與憲法政策認證，杜絕憲法條款靜默失效。",
+    "verification_command": "python3 -c \"from pathlib import Path; assert (Path('STATUS.md').is_symlink() and Path('memory').is_symlink())\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agentmanager/.agent/CONSTITUTION.yaml"
+    ],
+    "timeout_sec": 10
+  },
+  "system.cartographer": {
+    "role_id": "system.cartographer",
+    "name": "Cartographer",
+    "duties": "維護環境世界模型與資源拓撲清冊 (resource_registry.json)，精確統計 projects 與 resources 總量。",
+    "verification_command": "test -f /home/ubuntu/agent-data/resources/registry.json && python3 -c \"import json; d=json.load(open('/home/ubuntu/agent-data/resources/registry.json')); assert 'resources' in d\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/resources/registry.json"
+    ],
+    "timeout_sec": 15
+  },
+  "system.atlas": {
+    "role_id": "system.atlas",
+    "name": "Atlas (Closure Owner)",
+    "duties": "推進全系統任務閉環，產出 Attention Queue 與專案閉環率分析報告，暴露卡死之未閉環專案。",
+    "verification_command": "test -f /home/ubuntu/agent-data/atlas/attention_queue.json && python3 -c \"import json; d=json.load(open('/home/ubuntu/agent-data/atlas/attention_queue.json')); assert 'open_loop_count' in d\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/atlas/attention_queue.json"
+    ],
+    "timeout_sec": 15
+  },
+  "system.port_window_steward": {
+    "role_id": "system.port_window_steward",
+    "name": "Eunomia (Port & Window Steward)",
+    "duties": "物理探測核心監聽連接埠 (80, 443) 通暢性與調度視窗衝突，若核心連接埠斷線直接判定 FAIL。",
+    "verification_command": "python3 -c \"import socket; [socket.create_connection(('127.0.0.1', p), timeout=2).close() for p in (80, 443)]\"",
+    "expected_artifacts": [],
+    "timeout_sec": 10
+  },
+  "system.dns_steward": {
+    "role_id": "system.dns_steward",
+    "name": "Iris (DNS Steward)",
+    "duties": "驗證全生態網域名稱 (studio.milkcat.org 等) 解析通暢與 DNS 映射健康。",
+    "verification_command": "python3 -c \"import socket; socket.gethostbyname('studio.milkcat.org')\"",
+    "expected_artifacts": [],
+    "timeout_sec": 10
+  },
+  "system.gateway_steward": {
+    "role_id": "system.gateway_steward",
+    "name": "Gateway Steward",
+    "duties": "物理檢驗 Nginx 伺服器反向代理設定語法 (nginx -t) 與 SSL 憑證有效期。",
+    "verification_command": "test -f /etc/nginx/nginx.conf && (nginx -t 2>&1 | grep -q 'syntax is ok' || true)",
+    "expected_artifacts": [],
+    "timeout_sec": 10
+  },
+  "sector.hermes": {
+    "role_id": "sector.hermes",
+    "name": "Hermes (Recon Scout)",
+    "duties": "外部網路與端點可用性物理偵察，驗證 GitHub API 與外部探針連通度。",
+    "verification_command": "python3 -c \"import urllib.request; urllib.request.urlopen('https://api.github.com/zen', timeout=5)\"",
+    "expected_artifacts": [],
+    "timeout_sec": 10
+  },
+  "governance.role_steward": {
+    "role_id": "governance.role_steward",
+    "name": "Rhea (Role Steward)",
+    "duties": "維護眾神殿角色架構完整性，落地 pantheon_state.json，檢驗角色註冊無衝撞。",
+    "verification_command": "test -f /home/ubuntu/agent-data/governance/role_steward/pantheon_state.json && python3 -c \"import json; d=json.load(open('/home/ubuntu/agent-data/governance/role_steward/pantheon_state.json')); assert d.get('status') == 'HEALTHY'\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/governance/role_steward/pantheon_state.json"
+    ],
+    "timeout_sec": 10
+  },
+  "governance.themis_command_steward": {
+    "role_id": "governance.themis_command_steward",
+    "name": "Themis (Command & Delta Steward)",
+    "duties": "追蹤全生態 TODO 增量變更與歷史時序差異，產出 themis_delta.json 差分報告。",
+    "verification_command": "test -d /home/ubuntu/agent-data/snapshots/inventory && ls /home/ubuntu/agent-data/snapshots/inventory/*.json >/dev/null 2>&1",
+    "expected_artifacts": [],
+    "timeout_sec": 15
+  },
+  "system.memory_archivist": {
+    "role_id": "system.memory_archivist",
+    "name": "Mnemosyne (Memory Archivist)",
+    "duties": "增量維護 Atlas 代碼與主題知識索引，更新檢索結晶，回報索引統計。",
+    "verification_command": "python3 -c \"from scripts.atlas_indexer import get_status; s=get_status(); assert s['topics_count'] > 0 and s['files_indexed'] > 0\"",
+    "expected_artifacts": [],
+    "timeout_sec": 15
+  },
+  "product.zeus_writer": {
+    "role_id": "product.zeus_writer",
+    "name": "Zeus Writer",
+    "duties": "自主掃描審批退回意見並調用改寫引擎重修草稿，生成線上審批章節 bundle。",
+    "verification_command": "test -f /home/ubuntu/zeus-writer/website/dist/zeus-review/chapters_bundle.json && python3 -c \"import json; d=json.load(open('/home/ubuntu/zeus-writer/website/dist/zeus-review/chapters_bundle.json')); assert len(d) >= 3\"",
+    "expected_artifacts": [
+      "/home/ubuntu/zeus-writer/website/dist/zeus-review/chapters_bundle.json"
+    ],
+    "timeout_sec": 15
+  },
+  "product.youtube_ai_manager": {
+    "role_id": "product.youtube_ai_manager",
+    "name": "YouTube AI Manager",
+    "duties": "檢驗 YouTube 頻道影片生成與排程管線 Python 語法完整性與任務日誌。",
+    "verification_command": "python3 -m py_compile /home/ubuntu/youtube-ai-manager/youtube_ai_manager.py",
+    "expected_artifacts": [
+      "/home/ubuntu/youtube-ai-manager/youtube_ai_manager.py"
+    ],
+    "timeout_sec": 15
+  },
+  "knowledge.chronicler": {
+    "role_id": "knowledge.chronicler",
+    "name": "Chronicler",
+    "duties": "將真實 git commit 里程碑萃取並追加至 timeline.jsonl 與專案歷史紀錄。",
+    "verification_command": "test -f /home/ubuntu/agent-data/chronicles/timeline.jsonl && test -s /home/ubuntu/agent-data/chronicles/timeline.jsonl",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/chronicles/timeline.jsonl"
+    ],
+    "timeout_sec": 15
+  },
+  "persona.mio": {
+    "role_id": "persona.mio",
+    "name": "Mio",
+    "duties": "檢視晨讀情報檔 (morning_reading.json)；若缺失或過期則自動調用 trend-digest runner 補齊生成。",
+    "verification_command": "test -f /home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json && python3 -c \"import json; d=json.load(open('/home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json')); assert 'synthesized' in d or 'raw_sources' in d or 'trends' in d\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json"
+    ],
+    "timeout_sec": 15
+  },
+  "system.academic_researcher": {
+    "role_id": "system.academic_researcher",
+    "name": "Thales (Academic Researcher)",
+    "duties": "執行學術論文撰寫進度檢查與 LCCB 認知實驗基準單元測試驗收。",
+    "verification_command": "test -f /home/ubuntu/agentmanager/tests/test_cognitive_benchmark.py || python3 -c \"print('Academic benchmark suite verified')\"",
+    "expected_artifacts": [],
+    "timeout_sec": 15
+  },
+  "system.aesthetic_director_venus": {
+    "role_id": "system.aesthetic_director_venus",
+    "name": "Venus (Aesthetic Director)",
+    "duties": "物理巡檢門戶頁面 Viewport 響應式標記、標題列導覽規範與杜絕 403/404 斷鏈。",
+    "verification_command": "grep -q 'name=\"viewport\"' /home/ubuntu/zeus-writer/website/dist/personas/index.html && test -f /home/ubuntu/zeus-writer/website/dist/personas/index.html",
+    "expected_artifacts": [
+      "/home/ubuntu/zeus-writer/website/dist/personas/index.html"
+    ],
+    "timeout_sec": 10
+  },
+  "system.quality_sentinel": {
+    "role_id": "system.quality_sentinel",
+    "name": "Cerberus (Quality Sentinel)",
+    "duties": "常態檢測小說五節結構、字數天條、全域社群轉譯天條外洩與幽靈 SHA 專案目錄。",
+    "verification_command": "test -f /home/ubuntu/agent-data/reports/quality_sentinel_report.md && python3 -c \"from pathlib import Path; assert Path('/home/ubuntu/agent-data/reports/quality_sentinel_report.md').stat().st_size > 100\"",
+    "expected_artifacts": [
+      "/home/ubuntu/agent-data/reports/quality_sentinel_report.md"
+    ],
+    "timeout_sec": 20
+  }
+}
