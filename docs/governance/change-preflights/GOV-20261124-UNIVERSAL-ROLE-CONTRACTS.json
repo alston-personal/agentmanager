@@ -1,32 +1,55 @@
 {
-  "schema": "agentos.systemic-engineering-preflight/v1",
-  "id": "GOV-20261124-UNIVERSAL-ROLE-CONTRACTS",
-  "timestamp": "2026-11-24T04:11:30Z",
-  "title": "Universal Role Contracts and Independent Blind Verification Network",
-  "author": "Antigravity",
-  "status": "APPROVED",
-  "risk_tier": "HIGH",
-  "summary": "Codified physical role contracts for all 23 active roles in role_contracts.json and integrated BasePDCAWorker.check with blind_verifier.py to eliminate all fake completions.",
-  "scope": {
-    "subsystems": ["agent_core", "governance"],
-    "files": [
-      "agent_core/role_contracts.json",
-      "agent_core/base_pdca.py",
-      "docs/CURRENT_STATE.md"
-    ]
-  },
-  "invariants": {
-    "logic_data_separation": "Preserved. Contracts are defined in logic repo; receipts stored in agent-data.",
-    "protected_branch_authority": "Preserved. Pull request workflow enforced.",
-    "doc_code_parity": "Verified with scripts/documentation_reality_guard.py."
-  },
-  "acceptance_criteria": [
-    "All 23 active roles have physical verification commands in role_contracts.json",
-    "All BasePDCAWorker subclasses route through independent blind verifier in check phase",
-    "Unit tests tests.test_role_reality pass"
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261124-UNIVERSAL-ROLE-CONTRACTS",
+  "goal": "建立全域角色契約表 (role_contracts.json) 與全面接入不知情盲審獨立驗收器，徹底杜絕各角色假完成與自我盲目判定",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
   ],
-  "verification": {
-    "test_command": "python3 -m unittest tests.test_role_reality -v",
-    "evidence_file": "agent-data/runtime/role_contracts_acceptance.json"
-  }
+  "evidence_refs": [
+    "tests/test_role_runtime.py",
+    "tests/test_role_reality.py",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    "agent_core/role_contracts.json 全域 23 位在席角色物理驗收契約",
+    "agent_core/base_pdca.py 全面接入 blind_verifier 裁決",
+    "docs/CURRENT_STATE.md 同步"
+  ],
+  "existing_capabilities": [
+    "沿用 BasePDCAWorker 基礎四相循環",
+    "沿用 blind_verifier.py 獨立盲審驗收器",
+    "不引入未授權之外部依賴或平行架構"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "獨立盲審驗收器：不知情第三方檢驗權限"
+  ],
+  "failure_modes": [
+    "球員兼裁判：執行者自己核准自己，現由 blind_verifier 物理隔離阻斷",
+    "空心佔位角色：寫死文字欺騙檢查器，現由 role_contracts.json 明確約束實體驗收命令與交付物",
+    "盲目通過：發生錯誤卻回傳 PASS，現由 fail-closed 裁決直接標記 FAIL"
+  ],
+  "implementation_plan": [
+    "建立 agent_core/role_contracts.json 明確規範 23 位角色職責與物理驗收指令",
+    "全面重構 BasePDCAWorker.check()，將所有子類接入不知情盲審驗收器",
+    "驗證全生態 23 位角色盲審 100% 通過",
+    "通過單元測試與 Doc-Code 守衛"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_role_reality tests.test_role_runtime -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py"
+  ],
+  "rollback_plan": [
+    "若引發執行異常，以 git revert 回滾 PR 提交，不影響底層 Runtime 與數據層分離架構"
+  ],
+  "unknowns": [
+    "未來新增角色必須於 role_contracts.json 同步登錄物理驗收命令"
+  ]
 }
