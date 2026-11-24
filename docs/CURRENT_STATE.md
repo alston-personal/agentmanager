@@ -2563,3 +2563,13 @@ Implemented `agent_core/knowledge_relation_index.py` following the **Immutable R
 - **Rebuildable Relation Graph**: writes versioned `$AGENT_DATA_ROOT/knowledge/relation_graph.json` (`agentos.relation-graph/v1`) where every node and edge carries a `raw_ref` pointer back to the exact raw file/line/record.
 - **Recall-before-Act (`recall_for_task`)**: retrieves relevant guardrails, cross-project experiences, and related projects with `raw_ref` pointers before task execution.
 - **Verification**: `tests/test_knowledge_relation_index.py` (2/2 PASS) verifying byte-for-byte raw data immutability and cross-project recall accuracy.
+
+
+### 2026-11-24 — Oracle GUI Worker Gemini Web Surface Native Parity
+
+Fully converged `gemini-web` surface to run natively inside Oracle GUI Worker (`:99`, `agentos-gui-browser.service`, CDP `127.0.0.1:9222`) matching `chatgpt-web` architecture:
+
+- **Persistent Profile & Session Acceptance**: Verified session discovery, attachment, draft injection, and cleanup via `accept_gemini_web_session_user.sh` (ALL PASS).
+- **End-to-End Roundtrip**: Executed `accept_gemini_web_roundtrip_user.sh` verifying prompt submission, model response streaming, and marker harvesting (`AGENTOS_GEMINI_BRIDGE_OK` PASS).
+- **Service & Boot Persistence**: Enabled `agentos-gemini-web-bridge.service` under user systemd and confirmed zero exposed temporary routes.
+- **Evidence**: `oracle-gui-gemini-web-acceptance-receipt-20261124.json`.
