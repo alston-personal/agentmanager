@@ -2573,3 +2573,15 @@ Fully converged `gemini-web` surface to run natively inside Oracle GUI Worker (`
 - **End-to-End Roundtrip**: Executed `accept_gemini_web_roundtrip_user.sh` verifying prompt submission, model response streaming, and marker harvesting (`AGENTOS_GEMINI_BRIDGE_OK` PASS).
 - **Service & Boot Persistence**: Enabled `agentos-gemini-web-bridge.service` under user systemd and confirmed zero exposed temporary routes.
 - **Evidence**: `oracle-gui-gemini-web-acceptance-receipt-20261124.json`.
+
+
+### 2026-11-24 — Dual-Agent Dynamic Model Catalog Registry (`DUAL-01`)
+
+Refactored `agent_core/dual_agent_gate.py` to completely eliminate hardcoded model labels:
+
+- **External Dynamic Catalog**: Loads model tiers, IDs, and reasoning intensities from `$AGENT_DATA_ROOT/knowledge/model_catalog.json` (`ModelCatalogRegistry`).
+- **Live Menu Alignment**: Aligned with live UI selectors:
+  * `chatgpt-web`: `GPT-6.2` (`deep_thought`), `GPT-6` (`high`), `GPT-5.6 Sol` (`medium/low`).
+  * `gemini-web`: `Thinking` (`deep_thought`), `Pro` (`high`), `Fast` (`medium`), `自動` (`low`).
+- **Dynamic Cross-Model Consensus**: `DualAgentConsensusGate` resolves model routes dynamically from the catalog without any code modification when models evolve.
+- **Verification**: `tests/test_dual_agent_gate.py` (2/2 PASS) and `documentation_reality_guard.py` (PASS).
