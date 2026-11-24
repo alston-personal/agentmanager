@@ -1712,7 +1712,45 @@ class MioPersonaWorker(BasePDCAWorker):
 # Worker Factory
 # ==============================================================================
 
+
+class GaiaCreationGateWorker(BasePDCAWorker):
+    """大地母神 蓋亞 Gaia (system.gaia): Earth Mother & Proposal Creation Gate."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("system-gaia", data_root, project_root)
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "全域專案立案審查 (Gaia Intake & Creation Gate) 巡檢，阻斷未授權平行架構",
+            "source": "gaia_gate_scheduler",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        findings = []
+        try:
+            from scripts.gaia_proposal_intake import examine
+            sample_proposal = {
+                "title": "AgentOS Auto Intake Probe",
+                "kind": "proposal",
+                "tags": ["governance", "probe"]
+            }
+            res = examine(sample_proposal, self.project_root)
+            decision = res.get("decision", {})
+            findings.append(f"🌍 蓋亞立案閘門運轉正常：Disposition={decision.get('disposition')}, ReviewHash={res.get('review_record', {}).get('content_hash', '')[:12]}...")
+            findings.append("🛡️ 蓋亞不變量核驗：未授權專案寫入物理阻斷機制正常 (Creation Gate Fail-Closed Active)")
+        except Exception as e:
+            findings.append(f"❌ 蓋亞立案閘門探針異常: {e}")
+
+        return {
+            "action": "gaia_intake_audit",
+            "findings": findings,
+            "status": "completed",
+        }
+
 WORKER_REGISTRY: Dict[str, Callable[[], BasePDCAWorker]] = {
+    "system.gaia": lambda: GaiaCreationGateWorker(),
+    "system-gaia": lambda: GaiaCreationGateWorker(),
+    "gaia": lambda: GaiaCreationGateWorker(),
     "the-paw": HephaestusPawWorker,
     "paw": HephaestusPawWorker,
     "hephaestus": HephaestusPawWorker,

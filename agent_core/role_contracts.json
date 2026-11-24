@@ -214,5 +214,32 @@
       "/home/ubuntu/agent-data/reports/quality_sentinel_report.md"
     ],
     "timeout_sec": 20
+  },
+  "system.gaia": {
+    "role_id": "system.gaia",
+    "name": "Gaia (Earth Mother & Proposal Creation Gate)",
+    "duties": "掌管全域專案立案審查 (Gaia Intake & Proposal Reconcile)，判斷新提案應重用既有專案、擴充既有 Capability 或立新案，阻斷未經授權的平行架構與重複專案生長。",
+    "verification_command": "python3 scripts/gaia_intake_probe.py",
+    "expected_artifacts": [
+      "/home/ubuntu/agentmanager/agent_core/gaia_intake.py",
+      "/home/ubuntu/agentmanager/agent_core/gaia_creation_gate.py"
+    ],
+    "timeout_sec": 15
+  },
+  "tiandao-cangxuan": {
+    "role_id": "tiandao-cangxuan",
+    "name": "蒼玄道人 Cangxuan (小說純潔度與字數審查)",
+    "duties": "審查《天道敕令》最新章節草稿字數天條與術語純潔度，杜絕現代科技裸露詞彙。",
+    "verification_command": "test -d /home/ubuntu/zeus-writer/天道敕令_阿賴耶識修真錄/正文 && python3 -c \"from pathlib import Path; assert len(list(Path('/home/ubuntu/zeus-writer/天道敕令_阿賴耶識修真錄/正文').glob('*.md'))) >= 18\"",
+    "expected_artifacts": [],
+    "timeout_sec": 10
+  },
+  "tiandao-geek": {
+    "role_id": "tiandao-geek",
+    "name": "極客道人 Geek (散修法陣與端點即時探測)",
+    "duties": "散修視角之伺服器法陣與公共連接埠即時探測，物理驗證 80, 443 通暢度。",
+    "verification_command": "python3 -c \"import socket; [socket.create_connection(('127.0.0.1', p), timeout=2).close() for p in (80, 443)]\"",
+    "expected_artifacts": [],
+    "timeout_sec": 10
   }
 }
