@@ -2573,3 +2573,16 @@ Fully converged `gemini-web` surface to run natively inside Oracle GUI Worker (`
 - **End-to-End Roundtrip**: Executed `accept_gemini_web_roundtrip_user.sh` verifying prompt submission, model response streaming, and marker harvesting (`AGENTOS_GEMINI_BRIDGE_OK` PASS).
 - **Service & Boot Persistence**: Enabled `agentos-gemini-web-bridge.service` under user systemd and confirmed zero exposed temporary routes.
 - **Evidence**: `oracle-gui-gemini-web-acceptance-receipt-20261124.json`.
+
+
+### 2026-11-24 — Dual-Agent Consensus Gate & Dynamic Model/Reasoning Router (`DUAL-01`)
+
+Implemented `agent_core/dual_agent_gate.py` with cross-model dual-agent consensus and dynamic model/reasoning intensity selection:
+
+- **Dynamic Model & Reasoning Intensity Selection (`route_model_for_task`)**:
+  * Maps `TaskComplexity` (`trivial`, `standard`, `complex`, `critical`) to `ReasoningIntensity` (`low`, `medium`, `high`, `deep_thought`).
+  * Dynamically selects provider models (e.g., `gemini-2.0-flash`, `gemini-2.0-pro`, `gemini-2.0-flash-thinking` vs `gpt-4o-mini`, `gpt-4o`, `o1`).
+- **Cross-Model Dual-Agent Review (`DualAgentConsensusGate`)**:
+  * Enforces `strict_cross_model`: Proposer and Adversarial Reviewer must run on different providers (e.g. Gemini Web Proposer vs ChatGPT Web Reviewer) to prevent self-confirmation bias.
+  * Escalates complex/critical tasks to extended thinking on the reviewer side before signing off consensus (`APPROVED`, `REVISION_REQUIRED`, `REJECTED`).
+- **Verification**: `tests/test_dual_agent_gate.py` (3/3 PASS) covering dynamic routing, adversarial review consensus, and strict cross-model enforcement.
