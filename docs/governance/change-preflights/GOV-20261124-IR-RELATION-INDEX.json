@@ -1,0 +1,52 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261124-IR-RELATION-INDEX",
+  "goal": "實裝 AgentOS ONE IR 概念拓撲關聯索引與動態按需投影，終結開局死塞歷史 Token 並實現跨專案智慧湧現",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_ir_relation_index.py",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    "agent_core/ir_relation_index.py",
+    "tests/test_ir_relation_index.py",
+    "docs/CURRENT_STATE.md"
+  ],
+  "existing_capabilities": [
+    "沿用 canonical_ir 與 active-continuation.json 規範",
+    "沿用 immutable raw data + evolvable index 雙層架構",
+    "不破壞既有 PreInvocation Hook 契約，提供向後相容投影能力"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "IR Indexer：概念關聯拓撲索引構建權限"
+  ],
+  "failure_modes": [
+    "關聯召回失誤導致關鍵決策遺失，已設計 fallback 取最新 2 筆兜底",
+    "概念圖譜損壞，已採用原子寫入與安全例外捕獲"
+  ],
+  "implementation_plan": [
+    "建立 agent_core/ir_relation_index.py (概念萃取、圖譜構建、骨架動態投影)",
+    "新增 tests/test_ir_relation_index.py 單元測試 (3/3 PASS)",
+    "更新 docs/CURRENT_STATE.md 與治理前置清單"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_ir_relation_index -v (ALL PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree",
+    "python3 scripts/systemic_engineering_preflight.py --base origin/main"
+  ],
+  "rollback_plan": [
+    "以 git revert 回滾 PR，不影響現行 active-continuation 核心檔案"
+  ],
+  "unknowns": [
+    "未來將逐步在更多 MCP 工具中暴露動態召回 API"
+  ]
+}
