@@ -1168,14 +1168,35 @@ class WeaverWorker(BasePDCAWorker):
         }
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
-        findings = [
-            "✅ 需求收斂管道就緒：支援將自然語言目標提煉為 Canonical IR 與規範規格",
-            "✅ 現行 P0 整合需求已綁定：OpenMausBot 技術評估與 Runtime 整合 IR",
-        ]
+        findings = []
+        from agent_core.weaver_engine import process_spec_refinements
+        try:
+            refined_list = process_spec_refinements(limit=5)
+            if refined_list:
+                for r in refined_list:
+                    findings.append(f"🧵 [規格編織成功] 專案《{r['project']}》任務已鑄造驗收命令: {r['refined'][:70]}...")
+                findings.append(f"✅ Weaver 本輪已成功提煉解鎖 {len(refined_list)} 項規格，轉入合格執行隊列")
+            else:
+                findings.append("✅ 規格改寫隊列中暫無待提煉之抽象任務 (待命就緒)")
+        except Exception as e:
+            findings.append(f"⚠️ 規格編織引擎執行異常: {e}")
+
         return {"action": "specification_closure", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "sector.weaver.inspector", "verdict": "PASS", "findings": do_data.get("findings", [])}
+        findings = do_data.get("findings", [])
+        from agent_core.blind_verifier import verify_blindly
+        receipt = verify_blindly(
+            worker_role="sector.weaver",
+            target_project="agentmanager",
+            verification_command="python3 scripts/spec_steward.py --check"
+        )
+        return {
+            "verifier_role": "independent.blind_verifier_sentinel",
+            "verdict": receipt.get("verdict", "PASS"),
+            "findings": findings + receipt.get("findings", []),
+            "blind_receipt": receipt
+        }
 
 
 class WhispererWorker(BasePDCAWorker):
@@ -1384,13 +1405,35 @@ class ChroniclerWorker(BasePDCAWorker):
         }
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
-        findings = [
-            "📜 編年史記錄：成功記錄 AgentOS 21 角色全實體代碼化與 OpenMausBot 整合 IR 啟動里程碑",
-        ]
+        findings = []
+        from agent_core.chronicler_engine import extract_latest_milestones
+        try:
+            commits = extract_latest_milestones()
+            if commits:
+                latest = commits[0]
+                findings.append(f"📜 [編年史採集] 成功記錄真實 Git 演進: `{latest['hash']}` {latest['message']} ({latest['date']})")
+                findings.append(f"✅ 已沉澱至 timeline.jsonl 與 HISTORY.md (共更新 {len(commits)} 筆里程碑)")
+            else:
+                findings.append("ℹ️ 未偵測到新 commit 演進")
+        except Exception as e:
+            findings.append(f"⚠️ 編年史採集異常: {e}")
+
         return {"action": "chronicle_milestone", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "knowledge.chronicler.inspector", "verdict": "PASS", "findings": do_data.get("findings", [])}
+        findings = do_data.get("findings", [])
+        from agent_core.blind_verifier import verify_blindly
+        receipt = verify_blindly(
+            worker_role="knowledge.chronicler",
+            target_project="agentmanager",
+            verification_command="test -s /home/ubuntu/agent-data/chronicles/timeline.jsonl"
+        )
+        return {
+            "verifier_role": "independent.blind_verifier_sentinel",
+            "verdict": receipt.get("verdict", "PASS"),
+            "findings": findings + receipt.get("findings", []),
+            "blind_receipt": receipt
+        }
 
 
 class ThalesAcademicWorker(BasePDCAWorker):
