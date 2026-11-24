@@ -957,6 +957,29 @@ class ZeusWriterWorker(BasePDCAWorker):
             findings.append(f"❌ 宙斯寫手專案目錄不存在: {self.zeus_root}")
             return {"action": "multi_novel_audit", "findings": findings, "status": "failed"}
 
+        # 1. 核心業務動作：自主修訂審核退回章節 (Autonomic Revision Remediation)
+        revision_engine_script = self.zeus_root / "scripts" / "zeus_revision_engine.py"
+        revisions_executed = []
+        if revision_engine_script.exists():
+            try:
+                import subprocess
+                run_res = subprocess.run(
+                    [sys.executable, str(revision_engine_script)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if run_res.returncode == 0 and run_res.stdout.strip():
+                    try:
+                        revisions_executed = json.loads(run_res.stdout.strip().split("\n")[-1])
+                        for rev in revisions_executed:
+                            if isinstance(rev, dict) and rev.get("success"):
+                                findings.append(f"✍️ [自主修訂成功] 《{rev.get('novel')}》第 {rev.get('chapter')} 章已根據審核意見重寫，字數 {rev.get('new_char_count')}，已轉入待審核")
+                    except Exception:
+                        pass
+            except Exception as e:
+                findings.append(f"⚠️ 宙斯自動修訂引擎執行異常: {e}")
+
         total_written = 0
         novel_stats = {}
         for name, npath in self.novels.items():
@@ -987,9 +1010,10 @@ class ZeusWriterWorker(BasePDCAWorker):
             findings.append("⚠️ Astro 站點尚未編譯或 dist/index.html 缺失")
 
         return {
-            "action": "multi_novel_audit",
+            "action": "zeus_writer_autonomic_advance",
             "total_written": total_written,
             "novel_stats": novel_stats,
+            "revisions_executed": revisions_executed,
             "findings": findings,
             "status": "completed",
         }

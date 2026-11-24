@@ -1,3 +1,16 @@
+## 2026-11-24 — Zeus Writer Autonomic Revision Engine & Web Review Portal (PR #2378)
+
+1. **Autonomic Revision Remediation (`agent_core/base_pdca.py` & `zeus_revision_engine.py`)**:
+   - Replaced passive auditing in `ZeusWriterWorker.do()` with an active remediation loop.
+   - Built `zeus_revision_engine.py` to continuously inspect `publication_queue.json` for `rejected_feedback`, invoke rewriting aligned with `writing_persona.yaml`, save versioned backups in `receipts/revisions/`, rewrite drafts, and transition status to `revisions_pending_review`.
+   - Autonomously revised Chapter 3 of 《AgentOS開發血淚史》 based on feedback, resolving obscure cryptographic/security explanations into accessible first-person reflections (4,858 characters).
+2. **Review & Annotation Web Portal (`/novels/zeus-review/`)**:
+   - Deployed interactive web dashboard at `/novels/zeus-review/` served via Nginx (HTTP 200).
+   - Integrated reusable text selection and inline annotation component (`selection-tooltip`, `annotations-container`), one-click monotonic approval, and revision requests.
+   - Synchronized 《零碎證言》 historical publication records to Ch17 (`published_chapters`).
+
+---
+
 ## 2026-11-23 — Two-tier Cross-Node Monthly Report Skill (monthly_report; source only)
 
 Added `.agent/skills/monthly_report` establishing a two-tier cross-node monthly report generation and publishing architecture. The Coordinator role runs on `vopc5750` (Windows host with browser access), dispatching collection tasks to participating `agentos-node` instances (`dqa03backup`, `dqa03restore`, `vopc5750`). The Collector role extracts node-authoritative work slices from whitelisted company repositories and system maintenance events while strictly enforcing the company/personal boundary (excluding `agentos` and personal research from company reports). The date calculation algorithm determines target report dates as the Friday of the week containing the month's final Wednesday (supporting boundary-crossing into adjacent months). Browser automation on `vopc5750` waits for user Confluence login, duplicates the prior month's report, updates metadata and table headers, and publishes the synthesized weekly and monthly status records.
