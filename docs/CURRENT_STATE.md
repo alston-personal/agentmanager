@@ -1,3 +1,15 @@
+## 2026-11-24 — AgentOS ONE IR Relation Index & Lazy Projection (PR #2380)
+
+1. **IR Concept Graph & Topology Indexing (`agent_core/ir_relation_index.py`)**:
+   - Replaced linear historical IR append bloat with an evolvable concept relation graph (`ir_relation_graph.json`).
+   - Extracts 8 cross-project concept clusters (`web_routing`, `security_credentials`, `dynamic_models`, `editorial_consistency`, `worktree_concurrency`, `governance_preflight`, `persona_continuation`, `qa_automation`) to link historical decisions and execution goals.
+2. **Skeleton & Dynamic Lazy Projection (`project_canonical_ir`)**:
+   - Eliminates startup context explosion by projecting a lightweight skeleton: `active_goal`, strict `One-Pending-Task-Per-Turn` (`pending_tasks[0]`), and intent-based top-K recalled relevant decisions.
+   - Reduces startup IR token payload by **83.4%** (~1,926 tokens down to ~318 tokens) while fostering semantic emergence across projects.
+   - Verified with `tests/test_ir_relation_index.py` (3/3 PASS).
+
+---
+
 ## 2026-11-24 — Independent Blind Verifier & Real Role PDCA Activation (PR #2379)
 
 1. **Independent Blind Verifier (`agent_core/blind_verifier.py`)**:
