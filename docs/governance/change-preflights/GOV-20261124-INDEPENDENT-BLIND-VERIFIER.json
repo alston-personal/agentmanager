@@ -1,0 +1,60 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261124-INDEPENDENT-BLIND-VERIFIER",
+  "goal": "實裝獨立盲審驗收器、活化 Weaver 規格自動提煉與 Chronicler 真實演進記錄，徹底終結空殼假字串",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_role_runtime.py",
+    "tests/test_role_reality.py",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    "agent_core/base_pdca.py WeaverWorker 與 ChroniclerWorker 業務落實",
+    "agent_core/blind_verifier.py 獨立盲審驗收器",
+    "agent_core/weaver_engine.py 規格改寫隊列自動處理與 STATUS.md 回寫",
+    "agent_core/chronicler_engine.py 真實 Git 歷史里程碑沉澱",
+    "docs/CURRENT_STATE.md"
+  ],
+  "existing_capabilities": [
+    "沿用 BasePDCAWorker 基礎四相循環",
+    "沿用 SpecSteward 與 ConstitutionKeeper 物理阻斷機制",
+    "不引入未授權之外部依賴或平行架構"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "獨立盲審驗收器：不知情第三方檢驗權限",
+    "WeaverEngine：規格編織與解鎖權限"
+  ],
+  "failure_modes": [
+    "球員兼裁判：執行者自己核准自己，現已由 blind_verifier 物理隔離阻斷",
+    "死鎖隊列：抽象任務無人提煉，現已由 weaver_engine 自動補齊驗收指令",
+    "假象里程碑：寫死文字欺騙檢查器，現已由 chronicler_engine 採集真實 commit"
+  ],
+  "implementation_plan": [
+    "建立 agent_core/blind_verifier.py 獨立不知情盲審機制",
+    "建立 agent_core/weaver_engine.py 自動化規格提煉",
+    "建立 agent_core/chronicler_engine.py 真實歷史沉澱",
+    "重構 WeaverWorker 與 ChroniclerWorker 串接真實引擎與盲審",
+    "通過單元測試與 Doc-Code 守衛"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_role_runtime tests.test_role_reality -v (10/10 PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --base origin/main"
+  ],
+  "rollback_plan": [
+    "若引發執行異常，以 git revert 回滾 PR 提交，不影響底層 Runtime 與數據層分離架構"
+  ],
+  "unknowns": [
+    "後續更多角色需要逐步接入 blind_verifier",
+    "外部多節點需持續對齊獨立盲審協議"
+  ]
+}

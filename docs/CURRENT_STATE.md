@@ -1,3 +1,17 @@
+## 2026-11-24 — Independent Blind Verifier & Real Role PDCA Activation (PR #2379)
+
+1. **Independent Blind Verifier (`agent_core/blind_verifier.py`)**:
+   - Enforced strict separation between worker execution and verification.
+   - Workers cannot self-certify completions; an independent blind verifier executes physical acceptance criteria without trusting self-reported completion logs.
+2. **Weaver Specification Refinement Engine (`agent_core/weaver_engine.py` & `WeaverWorker`)**:
+   - Transformed `sector.weaver` from a passive placeholder into an active specification compiler.
+   - Automatically drains `spec_refinement_queue.json`, synthesizes missing verification commands, updates `STATUS.md`, and unblocks qualified tasks for `The Paw`.
+3. **Chronicler True History Engine (`agent_core/chronicler_engine.py` & `ChroniclerWorker`)**:
+   - Transformed `knowledge.chronicler` from static text into real git history tracking.
+   - Records verifiable Git commits into `agent-data/chronicles/timeline.jsonl` and `HISTORY.md`.
+
+---
+
 ## 2026-11-24 — Zeus Writer Autonomic Revision Engine & Web Review Portal (PR #2378)
 
 1. **Autonomic Revision Remediation (`agent_core/base_pdca.py` & `zeus_revision_engine.py`)**:
