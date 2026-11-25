@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timezone
-from agent_core.hermes_github_scan import evaluate, normalized_repo, run_scan, lifecycle_scan_summary
+from agent_core.hermes_github_scan import evaluate, normalized_repo, run_scan, lifecycle_scan_summary, DEFAULT_REPOS, USER_ASSIGNED_REPOS
 
 NOW=datetime(2026,11,7,tzinfo=timezone.utc)
 
@@ -56,6 +56,19 @@ class HermesGithubScanTests(unittest.TestCase):
         report=run_scan(["Example/project"],lambda _:fixture(),now=NOW)
         with self.assertRaises(ValueError):
             lifecycle_scan_summary(report,next_interval_hours=0)
+
+    def test_artemis_user_assigned_watchlist_is_separate_from_autonomous_seeds(self):
+        self.assertIn("google/artemis", USER_ASSIGNED_REPOS)
+        self.assertNotIn("google/artemis", DEFAULT_REPOS)
+        report=run_scan(["google/artemis"], lambda repo: fixture(name=repo),
+                        source_origins={"google/artemis":"USER_ASSIGNED"}, now=NOW)
+        self.assertEqual(report["findings"][0]["source_origin"], "USER_ASSIGNED")
+        self.assertFalse(report["runtime_receipt"])
+
+    def test_explicit_scan_origin_does_not_claim_autonomous_discovery(self):
+        report=run_scan(["Example/project"], lambda repo: fixture(name=repo),
+                        source_origins={"example/project":"EXPLICIT_INPUT"}, now=NOW)
+        self.assertEqual(report["findings"][0]["source_origin"], "EXPLICIT_INPUT")
 
     def test_max_repo_limit(self):
         with self.assertRaises(ValueError):
