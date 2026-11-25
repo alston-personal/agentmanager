@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+
+from agent_core.active_continuation import read_active_continuation
+from agentos_node.one_mcp import OracleLocalGateway
 
 from agentos_node.web_agent_surface import (
     WebSurfaceAdapter,
@@ -98,6 +102,65 @@ def harvest(page):
     return rows[-5:]
 
 
+def build_web_executor_preamble(gateway: OracleLocalGateway | None = None) -> str:
+    """Build canonical AgentOS Executor bootstrap preamble for Gemini Web."""
+    try:
+        gw = gateway or OracleLocalGateway()
+        active = read_active_continuation(gw.data_root)
+        project_id = str(active.get("project_id") or "agentos-core")
+        res = gw.resolve(project_id)
+        ir = (res.get("continuation") or {}).get("canonical_ir") or {}
+        goal = ir.get("goal") or "協助 AgentOS 雙代理審核、文字創作與系統任務執行"
+    except Exception:
+        project_id = "agentos-core"
+        goal = "協助 AgentOS 眾神殿進行代碼審查與雙代理驗證"
+
+    return (
+        f"[AgentOS ONE Session Hook - Executor Registration]\n"
+        f"你目前作為 AgentOS 系統的在席 Web Executor (Oracle Node, surface: gemini-web)。\n"
+        f"所屬專案: {project_id}\n"
+        f"當前目標: {goal}\n"
+        f"身份職責: 依據 AgentOS 眾神殿與憲法體制，負責執行指示、審核代碼、文字生成與提供雙代理交叉審查意見。\n"
+        f"請確認你的 Executor 身份，並在被詢問時明確表明你是 AgentOS Web Executor。"
+    )
+
+
+BOOTSTRAPPED_SESSIONS: set[str] = set()
+
+
+def on_session_attach_hook(page: Any, session_row: dict[str, Any]) -> dict[str, Any]:
+    """Auto-hook executed when a Gemini Web session is attached."""
+    session_id = str(session_row.get("session_id") or "")
+    if not session_id or session_id in BOOTSTRAPPED_SESSIONS:
+        return {"status": "already_bootstrapped", "session_id": session_id}
+
+    if session_row.get("state") != "READY":
+        return {"status": "skipped_not_ready", "session_id": session_id}
+
+    composer = first_visible(page, COMPOSERS)
+    if composer is None:
+        return {"status": "composer_not_visible", "session_id": session_id}
+
+    preamble = build_web_executor_preamble()
+    try:
+        composer.fill(preamble)
+    except Exception:
+        try:
+            composer.click()
+            page.keyboard.press("ControlOrMeta+A")
+            page.keyboard.type(preamble)
+        except Exception as exc:
+            return {"status": "error", "error": str(exc)[:300], "session_id": session_id}
+
+    try:
+        page.keyboard.press("Enter")
+    except Exception as exc:
+        return {"status": "error_submitting", "error": str(exc)[:300], "session_id": session_id}
+
+    BOOTSTRAPPED_SESSIONS.add(session_id)
+    return {"status": "bootstrapped", "session_id": session_id, "preamble_len": len(preamble)}
+
+
 ADAPTER = WebSurfaceAdapter(
     provider=PROVIDER,
     root=ROOT,
@@ -109,6 +172,7 @@ ADAPTER = WebSurfaceAdapter(
     preflight_target_inventory=True,
     connect_timeout_ms=5000,
     raw_cdp_fallback=True,
+    on_session_attach=on_session_attach_hook,
 )
 
 
