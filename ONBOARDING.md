@@ -1,12 +1,5 @@
 # AgentOS Onboarding
 
-## Hermes research-source intake (Draft PR #2386)
-
-The existing `agent_core/hermes_github_scan.py` is a **bounded GitHub metadata scanner**, not a standalone autonomous researcher or ONE execution authority. Default scanning uses curated `DEFAULT_REPOS` together with the user-assigned `USER_ASSIGNED_REPOS` (currently `google/artemis`); an explicit `--repo` invocation overrides that default list. GitHub findings include `source_origin` (`CURATED_SEED`, `USER_ASSIGNED`, or `EXPLICIT_INPUT`) so assigning a repository never counts as autonomous discovery.
-
-This metadata candidate scan does not read Threads shares, perform deep technical review, dispatch Employee assignments, or issue a lifecycle Receipt. The existing ONE/Supervisor/Employee Lifecycle remains responsible for authorized execution and its terminal evidence. Threads links must be resolved through the previously deployed shared social public-post Reader and forwarded to Hermes using an authorized existing consumer route. The inclusion of a GitHub repo here is **not** evidence of production deployment, a successful scan, or completed Hermes research; follow Issue #2120 for runtime evidence and PR #2386 for this code change.
-
-
 > **Read this together with [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).** That file is the canonical implementation-reality map.
 
 AgentOS is no longer accurately described as only a memory/pulse system. The current architecture includes continuation-state reconciliation, a persistent control plane, governance/resource resolution, cross-node Realm surfaces, platform drivers, and evidence-first acceptance.
