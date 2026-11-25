@@ -1,0 +1,64 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "HERMES-2120-ARTEMIS-PROVENANCE-20261125",
+  "goal": "Include owner-assigned google/artemis in existing Hermes metadata scans with explicit provenance, without claiming autonomous discovery or granting execution rights",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "scope_inventory": [
+    "agent_core/hermes_github_scan.py: default-source selection and finding provenance",
+    "tests/test_hermes_github_scan.py: new provenance tests",
+    "ONBOARDING.md: explain research source boundary; no runtime routing change"
+  ],
+  "existing_capabilities": [
+    "Existing Hermes scanner and scan state/fingerprint mechanism",
+    "Existing ONE Supervisor, Employee assignment lifecycle, leases and receipts",
+    "Existing shared Threads public-post Reader remains independent from GitHub metadata scanner"
+  ],
+  "authority_map": [
+    "GitHub protected main approval and independent review required before merge",
+    "ONE remains sole formal assignment and execution authority; this change does not dispatch Hermes",
+    "Oracle deployed source/receipt requires separate acceptance; upstream source provenance must not be interpreted as authorization"
+  ],
+  "failure_modes": [
+    "Default scans may query one additional public repository and encounter GitHub API rate limits",
+    "Metadata provenance fields could be misinterpreted as true autonomous discovery",
+    "User-specified --repo override must continue to work",
+    "Concurrent main changes must be reviewed before protected merge"
+  ],
+  "implementation_plan": [
+    "Keep DEFAULT_REPOS unchanged, add separate USER_ASSIGNED_REPOS entry for google/artemis",
+    "Attach source_origin enum to results, defaulting to CURATED_SEED for existing call sites",
+    "Document separation between metadata scanning, Hermes deep research, and Social Reader",
+    "Do not create new scheduler, Employee, Reader, or alter ONE active IR"
+  ],
+  "verification_plan": [
+    "Run tests.test_hermes_github_scan and tests.test_hermes_scan_policy",
+    "Run PR governance, documentation, IP and systemic preflight CI after independent review is recorded",
+    "Verify user-assigned findings carry USER_ASSIGNED and cannot count as AUTONOMOUS_DISCOVERY",
+    "After approved merge/deploy, read back Oracle installed SHA and a real Hermes assignment/lifecycle Receipt separately"
+  ],
+  "rollback_plan": [
+    "Revert this scoped PR through the protected main flow if unexpected scans or source-state drift appear",
+    "Disable the user-assigned repo default addition with a protected follow-up change without clearing prior Hermes private scan history",
+    "Do not alter leases or queues for rollback; reconcile active Executor generation separately"
+  ],
+  "unknowns": [
+    "Independent high-risk review not yet recorded",
+    "IP employment-scope classification needs authorized verification rather than guessing",
+    "Oracle installed scanner revision, Hermes lease status and source readback not yet verified",
+    "Threads _vVoWd3gP canonical post/reader receipt remains outstanding"
+  ],
+  "reviewers": [
+    "Independent AgentOS Core/Claw governance reviewer required",
+    "IP-scope reviewer/owner confirmation required",
+    "Protected-main maintainer approval required"
+  ],
+  "evidence_refs": [
+    "https://github.com/alston-personal/agentmanager/issues/2120",
+    "https://github.com/alston-personal/agentmanager/pull/2386",
+    "https://github.com/alston-personal/agentmanager/actions/runs/45536593784"
+  ],
+  "ready_for_implementation": false,
+  "review_status": "pending"
+}
