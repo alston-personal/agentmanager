@@ -257,6 +257,18 @@ class BasePDCAWorker:
                 except Exception as e:
                     pass
 
+        # 備援三：若本機 CLI 不通且無外部 API，直接調用 Oracle GUI Worker (CDP 9222 Web 大腦)
+        if status != "PASS":
+            try:
+                from agent_core.gui_worker_client import query_gui_worker
+                gui_res = query_gui_worker(full_prompt, timeout=min(timeout, 35))
+                if gui_res.get("status") == "PASS" and gui_res.get("reasoning"):
+                    provider_used = gui_res.get("provider", "gui-worker-web")
+                    status = "PASS"
+                    reasoning_text = gui_res.get("reasoning")
+            except Exception:
+                pass
+
         # 審計存證 (Audit Trail Logging):
         # 凡角色調用 LLM 進行思考與決策，必須即時追加記錄於資料層之專屬審計台帳
         audit_dir = self.data_root / "runtime" / "llm_reasoning"
@@ -486,18 +498,54 @@ class BasePDCAWorker:
                 "findings": [f"❌ Check phase exception: {exc}"],
             }
 
-        # 若 Check 裁定失敗或存在異常，所有角色一律於 Base Role 層級呼叫 LLM 進行處方開立
+        # 若 Check 裁定失敗或存在異常，所有角色一律於 Base Role 層級呼叫 LLM 進行處方開立與自主自癒驗證
         if c_data.get("verdict") == "FAIL":
             print(f"🔍 [{self.role_slug.upper()}] [Check] FAIL observed. 啟動 Base Role LLM 自省與處方開立...")
             reasoning_res = self.reason_with_llm(
-                prompt=f"檢查階段裁定未通過 (FAIL)。Findings: {c_data.get('findings')}\n請給出根本原因診斷與具體處方。",
+                prompt=f"檢查階段裁定未通過 (FAIL)。Findings: {c_data.get('findings')}\n請給出根本原因診斷與具體修復代碼/處方 (若需新增或修改檔案，請明確提供路徑與完整代碼)。",
                 project_id=target_project_id,
                 context={"stage": "check", "check_data": c_data, "do_data": d_data},
             )
+            remediation = reasoning_res.get("reasoning", "")
             c_data.setdefault("findings", []).append(
-                f"🧠 [LLM Prescription]: {reasoning_res.get('reasoning')[:120]}..."
+                f"🧠 [LLM Prescription]: {remediation[:120]}..."
             )
-            c_data["llm_remediation"] = reasoning_res.get("reasoning")
+            c_data["llm_remediation"] = remediation
+
+            # 🛠️ 自主自癒閉環 (Self-Healing Loop): 若有處方，嘗試解析並實體施工，隨後重新二次核驗
+            if reasoning_res.get("status") == "PASS" and remediation:
+                recheck_passed = False
+                recheck_findings = []
+                try:
+                    # 嘗試以正則提取 Markdown 代碼區塊與目標檔案
+                    import re
+                    code_blocks = re.findall(r"```(?:[a-zA-Z0-9_-]+)?\s*(?:#|//)?\s*(?:file:)?\s*([^\n]+)?\n(.*?)```", remediation, re.DOTALL)
+                    applied_files = []
+                    for target_hint, code_content in code_blocks:
+                        target_hint = (target_hint or "").strip()
+                        # 若目標提示看起來像是檔案路徑
+                        if target_hint and ("/" in target_hint or "." in target_hint) and not target_hint.startswith("python"):
+                            clean_path = target_hint.split()[-1].strip("`'\"")
+                            target_p = Path(clean_path)
+                            if not target_p.is_absolute() and target_project_id:
+                                target_p = self.data_root / "projects" / target_project_id / clean_path
+                            if target_p.suffix:
+                                target_p.parent.mkdir(parents=True, exist_ok=True)
+                                target_p.write_text(code_content, encoding="utf-8")
+                                applied_files.append(str(target_p))
+
+                    if applied_files:
+                        print(f"🛠️ [{self.role_slug.upper()}] [Self-Heal] 已自動實體應用修復檔案: {', '.join(applied_files)}")
+                        # 再次執行 check 進行二次客觀驗收
+                        re_c = self.check(p_data, d_data)
+                        if re_c.get("verdict") == "PASS":
+                            recheck_passed = True
+                            c_data["verdict"] = "PASS"
+                            c_data["self_healed"] = True
+                            c_data["findings"].append(f"🎉 [自癒成功] 二次驗收指令物理通過: {', '.join(re_c.get('findings', []))}")
+                            print(f"🎉 [{self.role_slug.upper()}] [Self-Heal] 二次驗收通過！Verdict 成功升級為 PASS！")
+                except Exception as heal_exc:
+                    c_data["findings"].append(f"⚠️ 自癒執行異常: {str(heal_exc)[:200]}")
 
         print(f"[{self.role_slug.upper()}] [Check] Verdict: {c_data.get('verdict')} ({'; '.join(c_data.get('findings', []))})")
 

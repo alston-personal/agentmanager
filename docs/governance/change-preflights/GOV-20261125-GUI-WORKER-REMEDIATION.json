@@ -1,0 +1,56 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261125-GUI-WORKER-REMEDIATION",
+  "goal": "在 BasePDCAWorker 實裝免付費之 GUI Worker 查詢客戶端與自主修復二次驗收閉環 (Self-Healing Loop)",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_base_pdca_self_healing.py",
+    "tests/test_role_runtime.py",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    "agent_core/gui_worker_client.py 實裝 CDP 9222 網頁大腦查詢",
+    "agent_core/base_pdca.py reason_with_llm 接入 GUI Worker 備援並實裝 check 階段實體修復與 re-check 二次驗收",
+    "tests/test_base_pdca_self_healing.py 單元測試",
+    "docs/CURRENT_STATE.md 同步記錄"
+  ],
+  "existing_capabilities": [
+    "沿用 agentos-gui-browser CDP 9222 監聽服務",
+    "沿用 BasePDCAWorker 基礎四相循環",
+    "沿用 blind_verifier 獨立審查機制"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "虛假通過：若 LLM 回傳文字看似成功但未物理通過測試，現以 re-check 原指令物理 exit 0 阻斷",
+    "瀏覽器分頁不存在：fail-safe 捕獲並優雅記錄，不造成角色崩潰"
+  ],
+  "unknowns": [
+    "長篇修復代碼之串流截取延遲，現以 35 秒上限與二次比對確保截取完整"
+  ],
+  "implementation_plan": [
+    "建立 agent_core/gui_worker_client.py",
+    "在 base_pdca.py 加入 GUI Worker 備援與實體檔案寫入、re-check 閉環",
+    "編寫 tests/test_base_pdca_self_healing.py 並通過驗證",
+    "更新 docs/CURRENT_STATE.md"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests/test_base_pdca_self_healing.py -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --base origin/main (PASS)"
+  ],
+  "rollback_plan": [
+    "若自癒邏輯異常，可透過關閉 self_heal 標記退回純 FAIL 記錄模式",
+    "若需全面回滾，執行 git revert 或切回 origin/main"
+  ]
+}
