@@ -2637,6 +2637,17 @@ Fully converged `gemini-web` surface to run natively inside Oracle GUI Worker (`
 - **Evidence**: `oracle-gui-gemini-web-acceptance-receipt-20261124.json`.
 
 
+### 2026-11-25 — Base Role Parametric Base-IR Pattern (PB-IR) Mindset Evolution
+
+Formalized and injected the Parametric Base-IR Pattern (`PB-IR`) into `BasePDCAWorker` (`agent_core/base_pdca.py`) as universal reasoning doctrine across all Pantheon roles:
+
+- **Core Axioms**: "幾何／物理的歸引擎，語義／決策的歸大模型" (Geometry/Physics to Deterministic Engine, Semantics/Decisions to LLM).
+- **Anti-Pattern Elimination**: Strict rejection of raw end-to-end physics or GUI simulation (e.g. blind mesh vertices generation or GUI clicking) in favor of parametric sliders (Shape Keys / Timeline Markers / Clean Schemas) over deterministic templates.
+- **Delta Editability**: Enforced structured IR representation allowing granular 1% parameter changes without breaking whole-pipeline regenerations.
+- **Authoritative Architecture Specification**: `docs/architecture/PARAMETRIC_BASE_IR_PATTERN.md`.
+- **Verification**: `tests.test_role_runtime` and `tests.test_role_reality` (10/10 PASS).
+
+
 ### 2026-11-25 — Gemini Web Executor Auto-Hook & Session Bootstrap
 
 Implemented universal `on_session_attach` Auto-Hook in `agentos_node/web_agent_surface.py` and `gemini_web_bridge.py`:

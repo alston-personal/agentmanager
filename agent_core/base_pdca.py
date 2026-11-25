@@ -191,6 +191,15 @@ class BasePDCAWorker:
         if context:
             sys_context_parts.append(f"【當前現場 Context】: {json.dumps(context, ensure_ascii=False)}")
 
+        # 注入 PB-IR (Parametric Base-IR Pattern) 思維進化公理
+        sys_context_parts.append(
+            "【系統架構公理 (PB-IR Pattern)】:\n"
+            "- 幾何／物理／渲染的歸確定性引擎（如 Blender bpy, FFmpeg, AST Parser, ControlNet），語義／決策的歸大模型。\n"
+            "- 嚴禁端到端盲目模擬外部物理操作或瞎猜空間幾何頂點，杜絕累積誤差。\n"
+            "- 優先鎖定確定性基底（Base Template），抽取結構化參數 IR（Shape Keys / 標記 / 契約），再驅動底層無頭引擎編譯產出。\n"
+            "- 保留微分編輯能力（Delta Editability），以結構化 IR 確保修改僅需調整參數而不破壞整體架構。"
+        )
+
         full_prompt = (
             "你是 AgentOS 生態中的自主神祇與工程角色，請嚴格基於你的身分與專案背景進行思考決策。\n"
             + "\n".join(sys_context_parts)
