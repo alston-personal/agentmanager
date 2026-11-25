@@ -1,0 +1,55 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261125-PB-IR-MINDSET-EVOLUTION",
+  "goal": "將參數化基底中間層模式 (PB-IR Pattern) 正式寫入架構規格與 BasePDCAWorker 基礎思維脈絡，使全神祇在席角色完成思維進化",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_role_runtime.py",
+    "tests/test_role_reality.py",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    "docs/architecture/PARAMETRIC_BASE_IR_PATTERN.md 架構公理規格書",
+    "agent_core/base_pdca.py 注入 PB-IR 思考範式",
+    "docs/CURRENT_STATE.md 同步記錄",
+    "tests/test_role_runtime.py 驗證"
+  ],
+  "existing_capabilities": [
+    "沿用 BasePDCAWorker reason_with_llm 與 PDCA 四相循環",
+    "沿用 role_reality 角色防假冒與印章機制"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "Prompt 膨脹：額外的系統公理需保持精練（4 條條目），避免消耗過多 Token",
+    "思維未對齊：確保所有由 BasePDCAWorker 派生之子類別調用 reason_with_llm 時均繼承此公理"
+  ],
+  "unknowns": [
+    "不同 LLM 對 PB-IR 概念的理解深度，已在提示詞中明確具體化為 Blender/FFmpeg/AST/ControlNet 等實體引擎對比"
+  ],
+  "implementation_plan": [
+    "撰寫 docs/architecture/PARAMETRIC_BASE_IR_PATTERN.md",
+    "在 agent_core/base_pdca.py 的 reason_with_llm 裝配 PB-IR 架構公理",
+    "更新 docs/CURRENT_STATE.md",
+    "執行單元測試與雙重守衛"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_role_runtime tests.test_role_reality -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --base origin/main (PASS)"
+  ],
+  "rollback_plan": [
+    "若 prompt 調整影響模型回應，可直接還原 base_pdca.py 中的 sys_context_parts.append 區塊",
+    "若需全面回滾，執行 git revert 或切回 origin/main"
+  ]
+}
