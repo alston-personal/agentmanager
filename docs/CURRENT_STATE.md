@@ -2658,6 +2658,15 @@ Formalized and injected the Parametric Base-IR Pattern (`PB-IR`) into `BasePDCAW
 - **Verification**: `tests.test_role_runtime` and `tests.test_role_reality` (10/10 PASS).
 
 
+### 2026-11-25 — Atlas Avatar Dynamic Pull Endpoint (Gemini Gem / GPTs Active Fetch)
+
+Implemented public-facing lightweight dynamic pull endpoint `/v1/atlas/avatar` (aliased to `/api/v1/one/atlas-avatar`) in `agent_core/realm_server.py`:
+
+- **Active Fetch Parity (Zero Hardcoded Prompts in Gems)**: Web executors, Google Gems, and custom GPTs can now actively pull the latest Atlas Avatar identity, system guardrails (`pitfalls_guardrails.md`), active continuation selector, and lossless projected canonical IR directly via `GET /v1/atlas/avatar` or `GET https://agentos.milkcat.org/api/v1/atlas/avatar`.
+- **Credential Fence**: Returns credential-isolated `agentos.atlas-avatar-context/v1` without exposing Realm tokens or private keys.
+- **Verification**: `tests/test_atlas_avatar_endpoint.py` (PASS) and `tests/test_realm_resolve_endpoint.py` (PASS).
+
+
 ### 2026-11-25 — Gemini Web Executor Auto-Hook & Session Bootstrap
 
 Implemented universal `on_session_attach` Auto-Hook in `agentos_node/web_agent_surface.py` and `gemini_web_bridge.py`:
