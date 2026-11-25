@@ -1,0 +1,49 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261125-GEMINI-WEB-EXECUTOR-HOOK",
+  "goal": "在 Web Agent Surface 與 Gemini Web Bridge 實裝通用 Session Bootstrap Auto-Hook，使 Web 端連線時無感自動注入 AgentOS Executor 身份與 Canonical IR 導引",
+  "risk_tier": "medium",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_gemini_web_bridge.py",
+    "scripts/probe_gemini_web_user.sh",
+    "scripts/documentation_reality_guard.py"
+  ],
+  "scope_inventory": [
+    "agentos_node/web_agent_surface.py 實裝 on_session_attach / auto-hook 注入回呼支援",
+    "agentos_node/gemini_web_bridge.py 實裝 gemini_web_executor_bootstrap_hook",
+    "tests/test_gemini_web_bridge.py 新增自動 Hook 注入單元測試",
+    "docs/CURRENT_STATE.md 同步記錄"
+  ],
+  "existing_capabilities": [
+    "沿用 web_agent_surface.py CDP attach 與 composer 填寫邏輯",
+    "沿用 antigravity_one_hook.py 之 Executor 身份與 Atlas Avatar 注入合約",
+    "沿用 accept_gemini_web_roundtrip_user.sh 驗收規範"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "重複注入：同一個 session 重複送出 Preamble 造成對話污染，需透過 session_id 標記保證 idempotent",
+    "輸入框鎖死：若 composer 未準備好時強行注入，需 fail-safe 記錄並待 READY 時再觸發"
+  ],
+  "implementation_plan": [
+    "在 web_agent_surface.py WebSurfaceAdapter 增加 on_session_attach 與 bootstrap_hook 支援",
+    "在 gemini_web_bridge.py 實裝建立 Executor Preamble 並在 session attach 時自動背景注入",
+    "新增單元測試驗證 Hook 被正確觸發且具備冪等性 (idempotent)",
+    "執行 documentation_reality_guard 與 systemic_engineering_preflight"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_gemini_web_bridge -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py"
+  ]
+}

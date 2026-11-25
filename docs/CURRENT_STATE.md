@@ -2637,6 +2637,16 @@ Fully converged `gemini-web` surface to run natively inside Oracle GUI Worker (`
 - **Evidence**: `oracle-gui-gemini-web-acceptance-receipt-20261124.json`.
 
 
+### 2026-11-25 — Gemini Web Executor Auto-Hook & Session Bootstrap
+
+Implemented universal `on_session_attach` Auto-Hook in `agentos_node/web_agent_surface.py` and `gemini_web_bridge.py`:
+
+- **Universal Auto-Hook Mechanism**: Added `on_session_attach` callback in `WebSurfaceAdapter` triggering automatically whenever a web surface session is attached via CDP.
+- **Executor Preamble & Identity Injection**: `gemini_web_bridge.py` dynamically resolves the active continuation (`agentos-core`) and injects an AgentOS Web Executor registration preamble (`[AgentOS ONE Session Hook - Executor Registration]`) into the web chat upon session attach.
+- **Idempotent Guard**: Bootstrapped session IDs are tracked in `BOOTSTRAPPED_SESSIONS` to prevent duplicate preamble injection during ongoing conversations.
+- **Verification**: `tests/test_gemini_web_bridge.py` (4/4 PASS) verifying attach hook trigger, preamble injection, and idempotent deduplication.
+
+
 ### 2026-11-24 — Dual-Agent Dynamic Model Catalog Registry (`DUAL-01`)
 
 Refactored `agent_core/dual_agent_gate.py` to completely eliminate hardcoded model labels:

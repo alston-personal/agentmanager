@@ -241,6 +241,7 @@ class WebSurfaceAdapter:
     preflight_target_inventory: bool = False
     connect_timeout_ms: int | None = None
     raw_cdp_fallback: bool = False
+    on_session_attach: Callable[[Any, dict[str, Any]], None] | None = None
 
     def event(self, event: str, *, session_id: str | None = None, state: str | None = None, detail: str | None = None) -> None:
         target = self.root / "events.jsonl"
@@ -412,7 +413,16 @@ class WebSurfaceAdapter:
 
             if operation == "attach":
                 self.event("session_ready", session_id=row.get("session_id"), state="ready")
-                return self.receipt(request, ok=True, state="ready", output={"attached": True, **row})
+                hook_result = None
+                if self.on_session_attach is not None:
+                    try:
+                        hook_result = self.on_session_attach(page, row)
+                    except Exception as exc:
+                        hook_result = {"error": str(exc)[:400]}
+                output_payload = {"attached": True, **row}
+                if hook_result:
+                    output_payload["bootstrap_hook"] = hook_result
+                return self.receipt(request, ok=True, state="ready", output=output_payload)
 
             if operation == "snapshot":
                 return self.receipt(request, ok=True, state=str(row.get("state") or "unknown").lower(), output=row)

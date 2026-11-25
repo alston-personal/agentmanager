@@ -91,6 +91,57 @@ class GeminiWebBridgeClassificationTests(unittest.TestCase):
             self.assertEqual(stored["sessions"], [])
             self.assertEqual(descriptor["session_state"], "NO_SESSION")
 
+    def test_attach_operation_triggers_on_session_attach_hook(self) -> None:
+        from agentos_node.gemini_web_bridge import on_session_attach_hook, BOOTSTRAPPED_SESSIONS
+        from agentos_node.session_bridge import REQUEST_SCHEMA
+
+        BOOTSTRAPPED_SESSIONS.clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = WebSurfaceAdapter(
+                provider="gemini-web",
+                root=Path(tmp),
+                hosts=("gemini.google.com",),
+                composer_selectors=('rich-textarea',),
+                classify=lambda _p: {"session_id": "gemini:session-1", "state": "READY", "url": "https://gemini.google.com/app"},
+                harvest=lambda _p: [],
+                on_session_attach=on_session_attach_hook,
+            )
+
+            fake_page = MagicMock()
+            fake_composer = MagicMock()
+            fake_browser = MagicMock()
+            fake_browser.contexts = [MagicMock()]
+            fake_browser.contexts[0].pages = [fake_page]
+            fake_manager = MagicMock()
+            fake_manager.start.return_value.chromium.connect_over_cdp.return_value = fake_browser
+
+            request = {
+                "schema": REQUEST_SCHEMA,
+                "request_id": "req-attach-1",
+                "provider": "gemini-web",
+                "operation": "attach",
+                "session_id": "gemini:session-1",
+            }
+
+            with patch("playwright.sync_api.sync_playwright", return_value=fake_manager), \
+                 patch("agentos_node.gemini_web_bridge.first_visible", return_value=fake_composer), \
+                 patch("agentos_node.gemini_web_bridge.build_web_executor_preamble", return_value="[AgentOS Hook]"):
+                receipt = adapter.process_request(request)
+
+            self.assertTrue(receipt["ok"])
+            self.assertEqual(receipt["state"], "ready")
+            self.assertIn("bootstrap_hook", receipt["output"])
+            self.assertEqual(receipt["output"]["bootstrap_hook"]["status"], "bootstrapped")
+            fake_composer.fill.assert_called_once_with("[AgentOS Hook]")
+            fake_page.keyboard.press.assert_called_once_with("Enter")
+            self.assertIn("gemini:session-1", BOOTSTRAPPED_SESSIONS)
+
+            # Test idempotent: second attach does not re-fill
+            with patch("playwright.sync_api.sync_playwright", return_value=fake_manager):
+                receipt2 = adapter.process_request(request)
+            self.assertEqual(receipt2["output"]["bootstrap_hook"]["status"], "already_bootstrapped")
+            self.assertEqual(fake_composer.fill.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
