@@ -25,6 +25,7 @@ DEFAULT_REPOS = (
     "nightly-labs/openbot", "stablyai/orca", "orca-cli/orca",
     "JustVugg/colibri",
 )
+USER_ASSIGNED_REPOS = ("google/artemis",)
 SCHEMA = "agentos.hermes-technology-scan/v1"
 MAX_REPOS = 25
 MAX_RESPONSE_BYTES = 350_000
@@ -116,7 +117,8 @@ def evaluate(repo: str, metadata: dict[str, Any], *, now: str) -> dict[str, Any]
 
 def run_scan(repos: list[str], fetch: Callable[[str], dict[str, Any]], *,
              old_fingerprints: dict[str, str] | None = None,
-             now: datetime | None = None) -> dict[str, Any]:
+             now: datetime | None = None,
+             source_origins: dict[str, str] | None = None) -> dict[str, Any]:
     if len(repos) > MAX_REPOS:
         raise ValueError("too_many_repositories")
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -131,6 +133,7 @@ def run_scan(repos: list[str], fetch: Callable[[str], dict[str, Any]], *,
         seen.add(key)
         try:
             finding = evaluate(repo, fetch(repo), now=now.isoformat())
+            finding["source_origin"] = (source_origins or {}).get(key, "CURATED_SEED")
         except (ValueError, RuntimeError, KeyError, TypeError) as exc:
             failures.append({"repo":repo, "error_class":type(exc).__name__})
             continue
@@ -229,9 +232,13 @@ def main() -> int:
         print(json.dumps({"status":"not_due", "next_eligible_at":plan.next_eligible_at,
                           "reason":plan.reason}))
         return 0
-    repos = args.repo or list(DEFAULT_REPOS)
+    repos = args.repo or [*DEFAULT_REPOS, *USER_ASSIGNED_REPOS]
+    origins = {repo.casefold(): ("EXPLICIT_INPUT" if args.repo else
+                                "USER_ASSIGNED" if repo in USER_ASSIGNED_REPOS else "CURATED_SEED")
+               for repo in repos}
     report = run_scan(repos, lambda r: github_repo_get(r, token=os.environ.get("GITHUB_TOKEN","")),
-                      old_fingerprints=previous.get("fingerprints",{}), now=now)
+                      old_fingerprints=previous.get("fingerprints",{}), now=now,
+                      source_origins=origins)
     report["next_scan_advisory"] = {
         "interval_hours":plan.interval_hours, "reason":plan.reason
     }
