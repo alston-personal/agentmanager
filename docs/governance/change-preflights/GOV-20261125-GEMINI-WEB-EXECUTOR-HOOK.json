@@ -2,7 +2,7 @@
   "schema": "agentos.systemic-change-preflight/v1",
   "change_id": "GOV-20261125-GEMINI-WEB-EXECUTOR-HOOK",
   "goal": "在 Web Agent Surface 與 Gemini Web Bridge 實裝通用 Session Bootstrap Auto-Hook，使 Web 端連線時無感自動注入 AgentOS Executor 身份與 Canonical IR 導引",
-  "risk_tier": "medium",
+  "risk_tier": "high",
   "phase": "implementation",
   "status": "in-progress",
   "ready_for_implementation": true,
@@ -35,6 +35,9 @@
     "重複注入：同一個 session 重複送出 Preamble 造成對話污染，需透過 session_id 標記保證 idempotent",
     "輸入框鎖死：若 composer 未準備好時強行注入，需 fail-safe 記錄並待 READY 時再觸發"
   ],
+  "unknowns": [
+    "Gemini Web 前端日後若重大改版變更 rich-textarea 標籤結構，可能需更新 selector 清單"
+  ],
   "implementation_plan": [
     "在 web_agent_surface.py WebSurfaceAdapter 增加 on_session_attach 與 bootstrap_hook 支援",
     "在 gemini_web_bridge.py 實裝建立 Executor Preamble 並在 session attach 時自動背景注入",
@@ -44,6 +47,10 @@
   "verification_plan": [
     "python3 -m unittest tests.test_gemini_web_bridge -v (PASS)",
     "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
-    "python3 scripts/systemic_engineering_preflight.py"
+    "python3 scripts/systemic_engineering_preflight.py --base origin/main (PASS)"
+  ],
+  "rollback_plan": [
+    "若 on_session_attach 影響現有分頁操作，可將 on_session_attach 設為 None 即可立即退回純手動輸入模式，完全無侵入性",
+    "若需全面回滾，執行 git revert 或切回 origin/main 重新發布"
   ]
 }
