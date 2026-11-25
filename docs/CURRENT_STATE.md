@@ -1,3 +1,12 @@
+## 2026-11-25 — Hermes owner-assigned GitHub source provenance (Draft PR #2386; NOT deployed)
+
+- Existing `agent_core/hermes_github_scan.py` is a bounded metadata-only GitHub scanner, **not** an autonomous deep-research executor or a source of ONE operating receipts. Default scan sources include curated `DEFAULT_REPOS` plus `USER_ASSIGNED_REPOS` (`google/artemis`), while explicit `--repo` overrides the defaults.
+- GitHub scan findings record `source_origin` of `CURATED_SEED`, `USER_ASSIGNED`, or `EXPLICIT_INPUT`. Any manually supplied or seeded repository is **not** an `AUTONOMOUS_DISCOVERY`; results still carry `runtime_receipt=false` and `work_item_created=false`.
+- The authoritative execution path remains ONE/Supervisor/Employee Lifecycle (assignment, generation lease, checkpoint, terminal Receipt). The existing `social.threads.public_post.read` and Oracle Vendor Reader own Threads `/share/` URL reading; Hermes is an authorized consumer, not a parallel Social Reader.
+- PR #2386 remains Draft pending governance, independent high-risk review and production readback. #2120 contains source-specific intake, including `google/artemis` and `https://www.threads.com/share/_vVoWd3gP`; neither source is evidence of Hermes completion until an actual Worker Receipt is independently read back.
+
+---
+
 ## 2026-11-24 — Gaia Creation Gate Onboarding & Full Pantheon Blind Verification (PR #2382)
 
 1. **Gaia Earth Mother & Creation Gate Onboarding (`system.gaia` & `GaiaCreationGateWorker`)**:
