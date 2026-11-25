@@ -2637,6 +2637,16 @@ Fully converged `gemini-web` surface to run natively inside Oracle GUI Worker (`
 - **Evidence**: `oracle-gui-gemini-web-acceptance-receipt-20261124.json`.
 
 
+### 2026-11-25 — Base Role GUI Worker Remediation & Self-Healing Verification Loop
+
+Implemented free-tier autonomous self-healing in `BasePDCAWorker` (`agent_core/base_pdca.py`) powered by Oracle GUI Worker:
+
+- **Oracle GUI Worker Fallback Client**: Added `agent_core/gui_worker_client.py` allowing any Pantheon role to query online browser tabs (ChatGPT Web / Gemini Web via CDP `127.0.0.1:9222`) without requiring paid API keys or relying on brittle terminal CLI timeouts.
+- **Autonomous Remediation & Physical Apply**: When Check phase yields `FAIL`, BasePDCAWorker automatically requests a concrete fix prescription from the GUI Worker and physically applies the generated code patches to the workspace.
+- **Deterministic Re-Check Gate**: The applied fix is immediately re-verified against the original objective acceptance command. Verdict is promoted to `PASS (self_healed=True)` only if the physical command exits with 0.
+- **Verification**: `tests/test_base_pdca_self_healing.py` (PASS) verifying end-to-end FAIL detection, GUI prescription, file generation, and re-check verdict promotion.
+
+
 ### 2026-11-25 — Base Role Parametric Base-IR Pattern (PB-IR) Mindset Evolution
 
 Formalized and injected the Parametric Base-IR Pattern (`PB-IR`) into `BasePDCAWorker` (`agent_core/base_pdca.py`) as universal reasoning doctrine across all Pantheon roles:
