@@ -1,3 +1,16 @@
+## 2026-11-26 — Cross-Node Task Dispatching API & Thin-Client OTA (PR #2389)
+
+1. **Cross-Node Task Dispatching via Runtime API (`agent_core/realm_server.py`, `agentos_node/thin_client_transport.py`, `agentos_node/client_cli.py`)**:
+   - 解決邊緣節點直接發動 Git Commit/Push 到遠端 `fabric.json` 導致 Central Oracle Core 記憶體未同步的架構衝突。
+   - 實裝 `POST /v1/tasks` 端點，支援邊緣節點（例如 `vopc5750`）透過驗證的 Node Token 直接向目標節點（例如 `dqa03restore`）派工，即時寫入 Central Fabric 記憶體與磁碟，保證 Long-polling 端點零延遲喚醒。
+   - 提供 `agentos-client dispatch --target-node <node_id> --task-file <file>` CLI 指令與 `ThinClientTransport.dispatch_task()`。
+2. **Thin-Client Heartbeat OTA Target Convergence**:
+   - Central RealmServer 於 `POST /v1/heartbeat` 回傳 `target_release_commit` 與 `target_release_ref`。
+   - Thin-Client 檢測本地 `runtime-provenance.json` 版本，若落後則提示並支援安全原地收斂升級。
+   - 通過 `tests/test_realm_task_dispatch_api.py` 單元測試驗證。
+
+---
+
 ## 2026-11-24 — Gaia Creation Gate Onboarding & Full Pantheon Blind Verification (PR #2382)
 
 1. **Gaia Earth Mother & Creation Gate Onboarding (`system.gaia` & `GaiaCreationGateWorker`)**:

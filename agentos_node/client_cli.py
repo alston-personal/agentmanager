@@ -139,6 +139,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser('verify', help='verify an already-enrolled Node including lifecycle supervisor and persist regression evidence')
     sub.add_parser('once', help='heartbeat, refresh discovery, pull tasks once, execute, return receipts')
     sub.add_parser('run', help='run persistent polling daemon')
+
+    p_dispatch = sub.add_parser('dispatch', help='dispatch task to another node via ONE runtime API')
+    p_dispatch.add_argument('--target-node', required=True, help='target node ID')
+    p_dispatch.add_argument('--task-file', type=Path, required=True, help='path to JSON file containing node-task')
     return parser
 
 
@@ -235,6 +239,13 @@ def main(argv: list[str] | None = None) -> int:
         print(render_json({'receipts': transport.run_once()}))
     elif args.command == 'run':
         transport.run_forever()
+    elif args.command == 'dispatch':
+        if not args.task_file.exists():
+            print(f'error: task file not found: {args.task_file}', file=sys.stderr)
+            return 2
+        task = json.loads(args.task_file.read_text(encoding='utf-8'))
+        res = transport.dispatch_task(args.target_node, task)
+        print(render_json(res))
     return 0
 
 

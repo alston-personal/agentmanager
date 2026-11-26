@@ -1,0 +1,59 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261126-CROSS-NODE-TASK-DISPATCH-OTA",
+  "goal": "實裝跨節點任務派送 Runtime API (POST /v1/tasks) 與 Thin-Client Heartbeat OTA 協議，根絕邊緣節點直接 Git Push fabric.json 導致調度器未同步的衝突",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_realm_task_dispatch_api.py",
+    "docs/AGENTOS_NODE.md",
+    "docs/CURRENT_STATE.md",
+    "scripts/documentation_reality_guard.py",
+    "scripts/systemic_engineering_preflight.py"
+  ],
+  "scope_inventory": [
+    "agent_core/realm_server.py 實裝 POST /v1/tasks 驗證呼叫者節點並將任務寫入目標節點隊列，並在 heartbeat 回傳 target_release_commit",
+    "agentos_node/thin_client_transport.py 實裝 dispatch_task() 與 _check_and_trigger_ota()",
+    "agentos_node/client_cli.py 新增 dispatch CLI 子命令",
+    "tests/test_realm_task_dispatch_api.py 建立完整跨節點派發與執行測試",
+    "docs/AGENTOS_NODE.md 與 docs/CURRENT_STATE.md 同步規範"
+  ],
+  "existing_capabilities": [
+    "沿用 RealmFabricStore.queue_task() 原子化鎖定與隊列寫入",
+    "沿用 ThinClientTransport 既有之 HTTP Bearer Token 驗證機制",
+    "沿用 runtime_provenance.observe_runtime() 檢查本地運行版本"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "未經認證的節點偽造派工：嚴格透過 node_token 與 fabric.authenticate() 進行身份驗證",
+    "派發不存在的節點：queue_task fail-closed 拋出 KeyError",
+    "無效任務結構：拒絕缺少 task_id 或 schema 不符的請求"
+  ],
+  "unknowns": [
+    "Windows 節點若同時存在多個鎖定 process，需確保 OTA 重啟時使用乾淨的 launcher 替換"
+  ],
+  "implementation_plan": [
+    "在 agent_core/realm_server.py 註冊 POST /v1/tasks 處理邏輯，支援 caller_node_id 驗證與 target_node_id 排程",
+    "在 thin_client_transport.py 與 client_cli.py 暴露 dispatch_task API 與 dispatch 指令",
+    "在 heartbeat 回應中附帶 target_release_commit 與 target_release_ref 供客戶端檢查",
+    "新增單元測試並執行 doc guard 與 preflight guard"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_realm_task_dispatch_api tests.test_realm_fabric -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py (PASS)"
+  ],
+  "rollback_plan": [
+    "若 POST /v1/tasks 或 OTA 邏輯有副作用，可透過 git revert 或切除該端點快速回滾"
+  ]
+}
