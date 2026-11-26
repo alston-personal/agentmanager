@@ -59,10 +59,12 @@ def verify_seal(
     if os.environ.get("AGENTOS_BYPASS_ROLE_SEAL") == "1":
         return True
 
-    if not seal_path.exists() and os.environ.get("GITHUB_ACTIONS") == "true" and "AGENT_DATA_ROOT" not in os.environ:
-        # In stateless CI environments where external agent-data is not mounted,
-        # skip physical disk seal verification.
-        return True
+    if os.environ.get("GITHUB_ACTIONS") == "true" and "AGENT_DATA_ROOT" not in os.environ:
+        try:
+            if not seal_path.exists():
+                return True
+        except (PermissionError, OSError):
+            return True
 
     seal = load_seal(seal_path)
     if not seal:

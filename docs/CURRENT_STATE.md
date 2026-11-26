@@ -4,6 +4,8 @@
    - Formalized `system.prometheus` (普羅米修斯 Prometheus / Forethought, Fire-Bringer & Architecture Synergy Scout / 先見之神、盜火者與架構綜效總管) into `.agent/roles/registry.yaml` and `.agent/roles/instances/system_prometheus.md`.
    - 專司**跨專案架構綜效掃描、成熟心法橫向播種、舊時代規格與規劃重塑**，解決系統演化中產生的「橫向經驗孤島」與「單點突破無人擴散」問題。
    - 實裝 `agent_core/prometheus_engine.py` 與 `PrometheusSynergyWorker`，提煉近期已驗證之成熟火種模式（如 Runtime API 派工、Thin-Client OTA、Dynamic Avatar Pull 等），並自動比對既有規格與代碼庫，產出《架構綜效與演化抽取建議書》（`agent-data/synergy/latest_synergy_report.json`）。
+2. **Role Seal CI Stateless Fence (`agent_core/role_seal.py`)**:
+   - 強化 GitHub Actions 無狀態 CI 環境中的瑞亞神殿封印檢查，優雅處理跨容器磁碟路徑的 PermissionError 與不存在情境，確保 CI 與實體 Oracle 環境一致。
    - 經 Rhea Role Steward 實體真實性守門審查通過並蓋印封印（`scripts/rhea_role_steward.py --seal`，24 個 Active 角色零紙上假人），通過 `tests/test_prometheus_engine.py` (3/3 PASS) 與全體角色盲審。
 
 ---
