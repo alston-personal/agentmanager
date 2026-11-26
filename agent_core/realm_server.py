@@ -1078,6 +1078,17 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'credential_exposed': False,
                 })
                 return
+            if parsed.path in ('/v1/receipts', '/v1/delegation/receipt'):
+                query = parse_qs(parsed.query)
+                task_id = (query.get('task_id') or [''])[0]
+                if not task_id:
+                    raise ValueError('task_id query parameter is required')
+                receipt = self.fabric.get_receipt(task_id)
+                if receipt is None:
+                    self._send(404, {'ok': False, 'error': f'receipt not found for task_id: {task_id}'})
+                else:
+                    self._send(200, {'ok': True, 'receipt': receipt})
+                return
             if parsed.path == '/v1/tasks':
                 query = parse_qs(parsed.query)
                 node_id = (query.get('node_id') or [''])[0]
@@ -1294,7 +1305,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
                 return
-            if parsed.path == '/v1/tasks':
+            if parsed.path in ('/v1/tasks', '/v1/delegation/request'):
                 body = self._json_body()
                 token = self._bearer()
                 caller_node_id = str(body.get('caller_node_id') or body.get('node_id') or '')
@@ -1305,10 +1316,24 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 # Authenticate caller node or controller
                 if caller_node_id:
                     self.fabric.authenticate(caller_node_id, token)
+                    # Enforce governed capability fencing for cross-node calls
+                    if target_node_id != caller_node_id:
+                        from agent_core.cross_node_delegation import validate_cross_node_task
+                        validate_cross_node_task(task, caller_node_id=caller_node_id, target_node_id=target_node_id)
                 else:
                     self._authorize_controller()
                 queued = self.fabric.queue_task(target_node_id, task)
-                self._send(200, {'ok': True, 'queued': queued})
+                self._send(200, {
+                    'ok': True,
+                    'queued': queued,
+                    'delegation': {
+                        'schema': 'agentos.cross-node-delegation/v1',
+                        'caller_node_id': caller_node_id or 'controller',
+                        'target_node_id': target_node_id,
+                        'action': task.get('action'),
+                        'task_id': task.get('task_id'),
+                    }
+                })
                 return
             # Compatibility fence: preserve the live-accepted #64 transport contract.
             # Privileged runtime/controller surfaces below remain separately authenticated.
