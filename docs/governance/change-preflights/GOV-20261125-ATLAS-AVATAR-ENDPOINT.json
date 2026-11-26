@@ -1,0 +1,55 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261125-ATLAS-AVATAR-ENDPOINT",
+  "goal": "在 RealmServer 實裝 /v1/atlas/avatar 動態拉取端點，供 Google Gems、Custom GPTs 與外部 LLM 界面依專案動態獲取最新 Atlas 降臨人格、目標與 Canonical IR 指引",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_atlas_avatar_endpoint.py",
+    "scripts/documentation_reality_guard.py",
+    "scripts/systemic_engineering_preflight.py"
+  ],
+  "scope_inventory": [
+    "agent_core/realm_server.py 實裝 handle_atlas_avatar 處理函式與 GET /v1/atlas/avatar 路由",
+    "tests/test_atlas_avatar_endpoint.py 新增各情境（預設、指定 project_id、無效專案）之端點單元測試",
+    "docs/CURRENT_STATE.md 同步記錄端點規格與驗收狀態"
+  ],
+  "existing_capabilities": [
+    "沿用 agentos_node/antigravity_one_hook.py 既有之 read_atlas_avatar_profile 邏輯",
+    "沿用 RealmServer HTTP 路由分派與 JSON 回傳機制",
+    "沿用 Logic/Data 分離之 canonical IR 讀取路徑"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：PR #2388 合併權限",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "專案不存在或無 Canonical IR：回傳 404 及清晰之錯誤代碼，不拋出未捕捉例外",
+    "權限洩漏：端點只暴露公開 Persona 與 Preamble 指引，嚴禁包含 node token 或私密憑據"
+  ],
+  "unknowns": [
+    "外部 GPT/Gem 針對 URL 請求的快取機制可能導致幾分鐘的延遲，端點需明確帶 Cache-Control: no-cache 標頭"
+  ],
+  "implementation_plan": [
+    "在 agent_core/realm_server.py 中新增 handle_atlas_avatar 處理函式，動態組裝 Atlas Avatar 提示詞與專案狀態",
+    "在 RealmServer 路由表註冊 GET /v1/atlas/avatar",
+    "撰寫單元測試覆蓋多專案參數與異常情境",
+    "更新 docs/CURRENT_STATE.md 並執行 doc guard 與 preflight guard"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_atlas_avatar_endpoint -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py (PASS)"
+  ],
+  "rollback_plan": [
+    "若端點發生異常，直接在 RealmServer 路由中移除 /v1/atlas/avatar 分支即可完全恢復原狀",
+    "或透過 git revert 撤銷該 PR Commit"
+  ]
+}

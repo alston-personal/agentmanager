@@ -1052,9 +1052,31 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
-            if parsed.path == '/v1/health':
+            if parsed.path in ('/v1/health', '/healthz'):
                 data = self.fabric.load()
                 self._send(200, {'ok': True, 'schema': 'agentos.one-health/v0.1', 'realm_id': data.get('realm_id')})
+                return
+            if parsed.path in ('/v1/atlas/avatar', '/api/v1/one/atlas-avatar', '/v1/one/atlas-avatar'):
+                from agentos_node.antigravity_one_hook import _load_atlas_avatar
+                from agent_core.active_continuation import resolve_active_continuation, active_continuation_identity
+                from agentos_node.one_mcp import _project_resolve
+                from pathlib import Path
+                import os
+
+                data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
+                avatar = _load_atlas_avatar(data_root)
+                active = resolve_active_continuation()
+                identity = active_continuation_identity(active)
+                res = _project_resolve(active.get('resolution', {}))
+
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.atlas-avatar-context/v1',
+                    'avatar': avatar,
+                    'active_selector': {k: identity.get(k) for k in ('project_id', 'index_id', 'ir_id')},
+                    'canonical_ir': res.get('continuation', {}).get('canonical_ir'),
+                    'credential_exposed': False,
+                })
                 return
             if parsed.path == '/v1/tasks':
                 query = parse_qs(parsed.query)
@@ -1251,7 +1273,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         'source_ref': str(policy.get('desired_source_ref') or 'feature/realm-node-fabric-readiness'),
                         'source_commit': desired,
                     })
-                self._send(200, {'ok': True, 'node': node, 'auto_ota': auto_ota})
+                self._send(200, {
+                    'ok': True,
+                    'node': node,
+                    'auto_ota': auto_ota,
+                    'target_release_commit': desired or None,
+                    'target_release_ref': str(policy.get('desired_source_ref') or '') or None,
+                })
                 return
             if parsed.path == '/v1/benchmark':
                 body = self._json_body()
@@ -1265,6 +1293,22 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
+                return
+            if parsed.path == '/v1/tasks':
+                body = self._json_body()
+                token = self._bearer()
+                caller_node_id = str(body.get('caller_node_id') or body.get('node_id') or '')
+                target_node_id = str(body.get('target_node_id') or body.get('node_id') or '')
+                task = dict(body.get('task') or {})
+                if not task:
+                    raise ValueError('task payload is required')
+                # Authenticate caller node or controller
+                if caller_node_id:
+                    self.fabric.authenticate(caller_node_id, token)
+                else:
+                    self._authorize_controller()
+                queued = self.fabric.queue_task(target_node_id, task)
+                self._send(200, {'ok': True, 'queued': queued})
                 return
             # Compatibility fence: preserve the live-accepted #64 transport contract.
             # Privileged runtime/controller surfaces below remain separately authenticated.

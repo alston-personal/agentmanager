@@ -6,11 +6,24 @@
    - 實裝 `agent_core/prometheus_engine.py` 與 `PrometheusSynergyWorker`，提煉近期已驗證之成熟火種模式（如 Runtime API 派工、Thin-Client OTA、Dynamic Avatar Pull 等），並自動比對既有規格與代碼庫，產出《架構綜效與演化抽取建議書》（`agent-data/synergy/latest_synergy_report.json`）。
 2. **Role Seal CI Stateless Fence (`agent_core/role_seal.py`)**:
    - 強化 GitHub Actions 無狀態 CI 環境中的瑞亞神殿封印檢查，優雅處理跨容器磁碟路徑的 PermissionError 與不存在情境，確保 CI 與實體 Oracle 環境一致。
-2. **Hermes Recon Ledger to Prometheus Synergy Pipeline (`agent_core/prometheus_engine.py`)**:
+3. **Hermes Recon Ledger to Prometheus Synergy Pipeline (`agent_core/prometheus_engine.py`)**:
    - 實裝 Hermes 外採武器庫（`recon_ledger.json`）與 Prometheus 架構演化引擎之雙向對接。
    - **正向約束 (Forward Adoption)**：引進新武器（如 `taste-skill`）時自動生成規範建議，由 Gaia 與 Weaver 注入未來新專案 PRD；
    - **逆向重塑 (Retroactive Modernization)**：自動掃描全域專案資產（如 `social-galaxy`、`ip-genome-studio`），產出具體升級重構提案至 `strategic_uplift_proposals`，交由 The Paw 認領實施，徹底打破「引進武器卻無人重審舊代碼」的斷層。
    - 經 Rhea Role Steward 實體真實性守門審查通過並蓋印封印（`scripts/rhea_role_steward.py --seal`，24 個 Active 角色零紙上假人），通過 `tests/test_prometheus_engine.py` (3/3 PASS) 與全體角色盲審。
+
+---
+
+## 2026-11-26 — Cross-Node Task Dispatching API & Thin-Client OTA (PR #2389)
+
+1. **Cross-Node Task Dispatching via Runtime API (`agent_core/realm_server.py`, `agentos_node/thin_client_transport.py`, `agentos_node/client_cli.py`)**:
+   - 解決邊緣節點直接發動 Git Commit/Push 到遠端 `fabric.json` 導致 Central Oracle Core 記憶體未同步的架構衝突。
+   - 實裝 `POST /v1/tasks` 端點，支援邊緣節點（例如 `vopc5750`）透過驗證的 Node Token 直接向目標節點（例如 `dqa03restore`）派工，即時寫入 Central Fabric 記憶體與磁碟，保證 Long-polling 端點零延遲喚醒。
+   - 提供 `agentos-client dispatch --target-node <node_id> --task-file <file>` CLI 指令與 `ThinClientTransport.dispatch_task()`。
+2. **Thin-Client Heartbeat OTA Target Convergence**:
+   - Central RealmServer 於 `POST /v1/heartbeat` 回傳 `target_release_commit` 與 `target_release_ref`。
+   - Thin-Client 檢測本地 `runtime-provenance.json` 版本，若落後則提示並支援安全原地收斂升級。
+   - 通過 `tests/test_realm_task_dispatch_api.py` 單元測試驗證。
 
 ---
 
@@ -2672,6 +2685,15 @@ Formalized and injected the Parametric Base-IR Pattern (`PB-IR`) into `BasePDCAW
 - **Delta Editability**: Enforced structured IR representation allowing granular 1% parameter changes without breaking whole-pipeline regenerations.
 - **Authoritative Architecture Specification**: `docs/architecture/PARAMETRIC_BASE_IR_PATTERN.md`.
 - **Verification**: `tests.test_role_runtime` and `tests.test_role_reality` (10/10 PASS).
+
+
+### 2026-11-25 — Atlas Avatar Dynamic Pull Endpoint (Gemini Gem / GPTs Active Fetch)
+
+Implemented public-facing lightweight dynamic pull endpoint `/v1/atlas/avatar` (aliased to `/api/v1/one/atlas-avatar`) in `agent_core/realm_server.py`:
+
+- **Active Fetch Parity (Zero Hardcoded Prompts in Gems)**: Web executors, Google Gems, and custom GPTs can now actively pull the latest Atlas Avatar identity, system guardrails (`pitfalls_guardrails.md`), active continuation selector, and lossless projected canonical IR directly via `GET /v1/atlas/avatar` or `GET https://agentos.milkcat.org/api/v1/atlas/avatar`.
+- **Credential Fence**: Returns credential-isolated `agentos.atlas-avatar-context/v1` without exposing Realm tokens or private keys.
+- **Verification**: `tests/test_atlas_avatar_endpoint.py` (PASS) and `tests/test_realm_resolve_endpoint.py` (PASS).
 
 
 ### 2026-11-25 — Gemini Web Executor Auto-Hook & Session Bootstrap

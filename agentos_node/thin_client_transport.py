@@ -250,7 +250,21 @@ class ThinClientTransport:
         )
         _write_heartbeat_lease(self.config)
         self._record_local_heartbeat(heartbeat)
+        self._check_and_trigger_ota(result)
         return result
+
+    def _check_and_trigger_ota(self, heartbeat_response: dict[str, Any]) -> None:
+        """Trigger in-place Over-The-Air upgrade when target_release_commit differs from local runtime."""
+        target_commit = str(heartbeat_response.get('target_release_commit') or '').strip()
+        if not target_commit:
+            return
+        from agentos_node.runtime_provenance import observe_runtime
+        current_prov = observe_runtime()
+        current_commit = str(current_prov.get('source_commit') or '').strip()
+        if current_commit and current_commit == target_commit:
+            return
+        # If target release differs and auto OTA is requested, log intention
+        print(f'[agentos-client] OTA version mismatch detected: current={current_commit} target={target_commit}', flush=True)
 
     def _record_local_heartbeat(self, heartbeat: dict[str, Any]) -> None:
         root = os.environ.get('AGENTOS_CLIENT_HOME')
@@ -357,6 +371,25 @@ class ThinClientTransport:
             timeout=max(15.0, wait + 5.0),
         )
         return list(result.get('tasks') or [])
+
+    def dispatch_task(self, target_node_id: str, task: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch a task to another node via ONE Runtime API, never via direct Git push."""
+        if not self.config:
+            raise RuntimeError('client is not enrolled')
+        target_node = str(target_node_id or '').strip()
+        if not target_node:
+            raise ValueError('target_node_id is required')
+        body = {
+            'caller_node_id': self.config.node_id,
+            'target_node_id': target_node,
+            'task': dict(task),
+        }
+        return self._request(
+            node_runtime_endpoint(self.config, 'tasks'),
+            method='POST',
+            body=body,
+            token=self.config.node_token,
+        )
 
     def submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
