@@ -565,7 +565,7 @@ class ThinClientTransport:
                     receipts.append(receipt)
             except Exception as exc:
                 print(f'[agentos-client] transport error: {exc}', flush=True)
-                time.sleep(retry_delay)
+                time.sleep(delay)
 
 
 def build_client(config: ClientConfig, policy: ThinClientPolicy) -> ThinClientTransport:

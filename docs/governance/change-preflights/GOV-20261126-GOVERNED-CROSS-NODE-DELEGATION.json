@@ -1,0 +1,43 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "preflight_id": "GOV-20261126-GOVERNED-CROSS-NODE-DELEGATION",
+  "title": "Governed Cross-Node Delegation Protocol and Capability Fencing",
+  "status": "completed",
+  "created_at": "2026-11-26T14:46:00+08:00",
+  "author": "system.atlas",
+  "reviewers": [
+    "governance.keeper",
+    "sector.claw",
+    "system.quality_sentinel"
+  ],
+  "governance_scope": {
+    "track": "Product & Feature Engineering Track",
+    "risk_level": "medium",
+    "impact_areas": [
+      "agent_core/cross_node_delegation.py",
+      "agent_core/realm_server.py",
+      "agentos_node/thin_client_transport.py",
+      "tests/test_cross_node_delegation_governance.py"
+    ]
+  },
+  "intent_and_scope": {
+    "problem_statement": "Edge nodes require governed capability consumption from other nodes (e.g. desktop preview, safe file read, notifications) without exposing arbitrary remote shell or lateral movement vulnerabilities.",
+    "proposed_solution": "Establish agentos.cross-node-delegation/v1 with strict capability fencing in Central ONE Realm Fabric. Allow whitelisted actions (desktop.open_url, desktop.screenshot, safe filesystem) while fail-closed blocking shell.exec and unapproved calls.",
+    "boundary_guarantees": "Lateral shell execution between nodes is strictly rejected at the ONE Gateway with 401/PermissionError. Receipts are immutably recorded."
+  },
+  "verification_plan": {
+    "unit_tests": [
+      "tests.test_cross_node_delegation_governance",
+      "tests.test_realm_task_dispatch_api"
+    ],
+    "integration_probe": "python3 scripts/system_health_probe.py",
+    "role_reality_check": "python3 scripts/role_reality_guard.py",
+    "documentation_parity_check": "python3 scripts/documentation_reality_guard.py --worktree"
+  },
+  "evidence": {
+    "tests_passed": true,
+    "system_health_probe_status": "PASS",
+    "role_reality_status": "PASS",
+    "documentation_reality_status": "PASS"
+  }
+}

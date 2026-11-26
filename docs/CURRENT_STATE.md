@@ -1,3 +1,19 @@
+## 2026-11-26 — Governed Cross-Node Delegation Protocol & Capability Fencing (PR #2393)
+
+1. **Governed Cross-Node Delegation Protocol (`agentos.cross-node-delegation/v1`)**:
+   - 解決跨節點調度缺乏能力邊界、容易引發危險任意遠端 shell 或橫向跳板攻擊（Lateral Shell Movement）的安全隱患。
+   - 新增 `agent_core/cross_node_delegation.py`，定義嚴格能力白名單（`desktop.open_url`, `desktop.screenshot`, `desktop.windows.inspect`, `desktop.session.inspect`, `filesystem.read`, `filesystem.write`, `filesystem.search`, `notification.send`）。
+   - 物理阻斷跨節點發起 `shell.exec`, `process.exec`, `test.run` 等高風險橫向執行，違反者立即拋出 `PermissionError` (HTTP 401)。
+2. **Central ONE Realm Fabric & Gateway Endpoints (`agent_core/realm_server.py`)**:
+   - 開放 `POST /v1/delegation/request` 與 `GET /v1/delegation/receipt` 端點。
+   - 跨節點任務委託經雙向節點 Token 驗證，中央 Fabric 自動生成不可否認之 `agentos.cross-node-delegation/v1` 委託紀錄並持久化至 `receipts.sqlite3`。
+   - 修復 `agentos_node/thin_client_transport.py` 異常重試中未定義變數 `retry_delay` -> `delay` 的異常處理缺陷。
+3. **Unit Tests & Integration Verification (`tests/test_cross_node_delegation_governance.py`)**:
+   - 新增 4 項單元測試，涵蓋橫向 shell 物理攔截、未核准動作拒絕、合法 `desktop.open_url` 跨機調度與憑證檢索（4/4 PASS）。
+   - 通過 `system_health_probe.py` L7 業務健全與跨機心跳巡檢。
+
+---
+
 ## 2026-11-26 — Dynamic Port Manager & Fabric Heartbeat Health Defense (PR #2391)
 
 1. **Realm Fabric Isolated Release Import Hardening (`agentos_node/branch_resume_host_probe.py`, `agentos_node/branch_resume_guard.py`)**:
