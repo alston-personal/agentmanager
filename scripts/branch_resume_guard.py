@@ -19,7 +19,9 @@ import subprocess
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-class FreshnessError(RuntimeError):
+try:
+    from agentos_node.branch_resume_guard import *
+except ImportError:
     pass
 
 
