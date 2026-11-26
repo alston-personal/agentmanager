@@ -51,11 +51,17 @@ jobs:
           agent_core/realm_fabric.py
           agent_core/realm_server.py
           agent_core/realm_cli.py
+      - name: Exclude Oracle-only CLAUDE.md link from hosted test discovery
+        run: |
+          if [[ -L CLAUDE.md ]] && [[ "$(readlink CLAUDE.md)" == "/home/ubuntu/agent-data/templates/CLAUDE.md" ]]; then
+            rm -- CLAUDE.md
+          fi
       - name: Install test runtime
         run: python -m pip install --disable-pip-version-check pytest
       - name: Run Realm Node Fabric tests
         run: >-
           python -m pytest -q
+          --import-mode=importlib --rootdir=tests --ignore=CLAUDE.md
           tests/test_thin_client.py
           tests/test_node_registry_v01.py
           tests/test_realm_fabric.py

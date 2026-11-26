@@ -11,6 +11,8 @@
    - **正向約束 (Forward Adoption)**：引進新武器（如 `taste-skill`）時自動生成規範建議，由 Gaia 與 Weaver 注入未來新專案 PRD；
    - **逆向重塑 (Retroactive Modernization)**：自動掃描全域專案資產（如 `social-galaxy`、`ip-genome-studio`），產出具體升級重構提案至 `strategic_uplift_proposals`，交由 The Paw 認領實施，徹底打破「引進武器卻無人重審舊代碼」的斷層。
    - 經 Rhea Role Steward 實體真實性守門審查通過並蓋印封印（`scripts/rhea_role_steward.py --seal`，24 個 Active 角色零紙上假人），通過 `tests/test_prometheus_engine.py` (3/3 PASS) 與全體角色盲審。
+4. **Realm Node Fabric Hosted CI Symlink Fence (`.github/workflows/realm-node-fabric-v0.1.yml`)**:
+   - 在託管 CI 執行 Pytest 測試前，排除 Oracle 本地專屬之 `CLAUDE.md` 軟連結（指向 `/home/ubuntu/agent-data/templates/CLAUDE.md`），使無狀態 CI 測試收集器不因外部路徑中斷。
 
 ---
 
