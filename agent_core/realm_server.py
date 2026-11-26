@@ -1052,9 +1052,31 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
-            if parsed.path == '/v1/health':
+            if parsed.path in ('/v1/health', '/healthz'):
                 data = self.fabric.load()
                 self._send(200, {'ok': True, 'schema': 'agentos.one-health/v0.1', 'realm_id': data.get('realm_id')})
+                return
+            if parsed.path in ('/v1/atlas/avatar', '/api/v1/one/atlas-avatar', '/v1/one/atlas-avatar'):
+                from agentos_node.antigravity_one_hook import _load_atlas_avatar
+                from agent_core.active_continuation import resolve_active_continuation, active_continuation_identity
+                from agentos_node.one_mcp import _project_resolve
+                from pathlib import Path
+                import os
+
+                data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
+                avatar = _load_atlas_avatar(data_root)
+                active = resolve_active_continuation()
+                identity = active_continuation_identity(active)
+                res = _project_resolve(active.get('resolution', {}))
+
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.atlas-avatar-context/v1',
+                    'avatar': avatar,
+                    'active_selector': {k: identity.get(k) for k in ('project_id', 'index_id', 'ir_id')},
+                    'canonical_ir': res.get('continuation', {}).get('canonical_ir'),
+                    'credential_exposed': False,
+                })
                 return
             if parsed.path == '/v1/tasks':
                 query = parse_qs(parsed.query)
