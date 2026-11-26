@@ -1,36 +1,58 @@
 {
-  "schema": "agentos.systemic-engineering-preflight/v1",
-  "preflight_id": "GOV-20261126-DYNAMIC-PORT-HEALTH-AND-FABRIC-GUARD",
-  "title": "Dynamic Port Manager, L7 System Health and Cross-Node Fabric Heartbeat Guard",
-  "status": "verified",
-  "created_at": "2026-11-26T05:23:00Z",
-  "author": "Antigravity Autonomous Core Engineer",
-  "target_branch": "main",
-  "source_branch": "fix/realm-fabric-isolated-import-and-health-audit",
-  "impact_scope": [
-    "agentos_node/branch_resume_host_probe.py",
-    "agentos_node/branch_resume_guard.py",
-    "scripts/branch_resume_guard.py",
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261126-DYNAMIC-PORT-HEALTH-AND-FABRIC-GUARD",
+  "goal": "解決 Realm Fabric 隔離發布依賴遺失導致 502 崩潰之根因，並升級動態 Port Manager 探測、L7 業務健康檢測與跨節點 Fabric 心跳守門防線",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
     "scripts/system_health_probe.py",
-    "agent_core/base_pdca.py",
-    "agent_core/role_contracts.json",
     "tests/test_system_health_probe.py",
-    "docs/CURRENT_STATE.md"
+    "scripts/documentation_reality_guard.py",
+    "scripts/systemic_engineering_preflight.py"
   ],
-  "risks_and_mitigations": [
-    {
-      "risk": "Isolated Realm Fabric release directory lacks scripts/ top-level package causing ModuleNotFoundError",
-      "mitigation": "Migrated branch_resume_guard into agentos_node package with backward-compatible aliases in scripts/"
-    },
-    {
-      "risk": "Blind verification failing due to static port probe or unreachable endpoints",
-      "mitigation": "Dynamic Port Manager queries and multi-tier L4+L7 checks with grace periods"
-    }
+  "scope_inventory": [
+    "將 branch_resume_guard.py 遷移至 agentos_node 套件並實裝向後相容 alias",
+    "建立 scripts/system_health_probe.py 實現動態 Port Manager 探測、L7 HTTP 檢測與跨機節點心跳時效性守護",
+    "升級 tiandao-geek 與 system.port_window_steward 盲審合約與 PDCA Worker",
+    "撰寫單元測試覆蓋動態連接埠與節點心跳檢驗"
   ],
-  "verification_evidence": {
-    "isolated_import_verified": true,
-    "system_health_probe_exit": 0,
-    "unit_tests_pass": true,
-    "doc_guard_pass": true
-  }
+  "existing_capabilities": [
+    "沿用 scripts/core_services/port_manager.py 作為權威連接埠管理者",
+    "沿用 agent-data/realm/fabric.json 節點登記架構",
+    "沿用 BasePDCAWorker 與 blind_verifier 物理守門"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：PR #2392 合併權限",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "部分非關鍵連接埠暫未啟動：僅對核心關鍵服務（80, 443, 3041, 8780）強制 L7 要求，其餘作為狀態通報不阻斷",
+    "常駐節點斷線：若節點超過 5 分鐘無心跳則立即 FAIL 阻斷並報警"
+  ],
+  "unknowns": [
+    "外部節點網路短暫波動：設置 300s (5分鐘) 緩衝容忍視窗避免單次超時誤判"
+  ],
+  "implementation_plan": [
+    "修復 agentos_node/branch_resume_host_probe.py 依賴",
+    "編寫 scripts/system_health_probe.py",
+    "更新 agent_core/base_pdca.py 與 agent_core/role_contracts.json",
+    "更新 docs/CURRENT_STATE.md 並執行 doc guard"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_system_health_probe -v (PASS)",
+    "python3 scripts/system_health_probe.py (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --base origin/main (PASS)"
+  ],
+  "rollback_plan": [
+    "若發生異常可透過 git revert 撤銷該 PR",
+    "Realm 服務可獨立回滾至前一 Release"
+  ]
 }
