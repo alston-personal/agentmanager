@@ -8,6 +8,7 @@
    - 開放 `POST /v1/delegation/request` 與 `GET /v1/delegation/receipt` 端點。
    - 跨節點任務委託經雙向節點 Token 驗證，中央 Fabric 自動生成不可否認之 `agentos.cross-node-delegation/v1` 委託紀錄並持久化至 `receipts.sqlite3`。
    - 修復 `agentos_node/thin_client_transport.py` 異常重試中未定義變數 `retry_delay` -> `delay` 的異常處理缺陷。
+   - 在 `scripts/branch_resume_guard.py` 補足原生 `FreshnessError` 基礎例外類別，解決無狀態環境下直接執行時名稱未定義之防禦缺陷。
 3. **Unit Tests & Integration Verification (`tests/test_cross_node_delegation_governance.py`)**:
    - 新增 4 項單元測試，涵蓋橫向 shell 物理攔截、未核准動作拒絕、合法 `desktop.open_url` 跨機調度與憑證檢索（4/4 PASS）。
    - 通過 `system_health_probe.py` L7 業務健全與跨機心跳巡檢。
