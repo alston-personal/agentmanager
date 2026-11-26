@@ -514,6 +514,29 @@ roles:
   - admission_verdict
   - proposal_disposition
   source: .agent/roles/instances/system_gaia.md
+- id: system.prometheus
+  name: 普羅米修斯 Prometheus (Forethought, Fire-Bringer & Architecture Synergy Scout / 先見之神、盜火者與架構綜效總管)
+  aliases:
+  - prometheus
+  - fire-bringer
+  - synergy-scout
+  - architect-synthesizer
+  status: active
+  kind: synergy_governance
+  purpose: 奧林匹斯先見與盜火之神：專司跨專案架構綜效、新觀念橫向傳播、舊規劃重塑與現代化。主動發掘驗證成熟的新做法並將火種播種至各城邦，產出演化抽取建議書。
+  must_obey:
+  - truth_provenance
+  - responsibility_resolution
+  - receipts_over_claims
+  - traditional_chinese_mandate
+  capabilities:
+  - architecture.synergy.scan
+  - pattern.fire_bringer.extract
+  - spec.modernization.propose
+  outputs:
+  - architecture_synergy_report
+  - fire_bringer_proposals
+  source: .agent/roles/instances/system_prometheus.md
 legacy_instances:
 - id: instance.agentmanager_paw
   source: .agent/roles/instances/agentmanager_paw.md

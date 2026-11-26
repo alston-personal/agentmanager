@@ -1804,10 +1804,45 @@ class GaiaCreationGateWorker(BasePDCAWorker):
             "status": "completed",
         }
 
+
+class PrometheusSynergyWorker(BasePDCAWorker):
+    """普羅米修斯 Prometheus (system.prometheus): Forethought, Fire-Bringer & Architecture Synergy Scout."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("system-prometheus", data_root, project_root)
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "跨專案架構綜效掃描、火種模式提煉與舊規格演化建議巡檢",
+            "source": "prometheus_scheduler",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        findings = []
+        try:
+            from agent_core.prometheus_engine import generate_synergy_report
+            report = generate_synergy_report(self.project_root, self.data_root)
+            out_dir = self.data_root / "synergy"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_file = out_dir / "latest_synergy_report.json"
+            out_file.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            findings.append(f"🔥 [Prometheus] 提煉成熟火種模式 {report.get('fire_patterns_count', 0)} 項，產出 {len(report.get('strategic_uplift_proposals', []))} 項跨專案演化提案")
+        except Exception as e:
+            findings.append(f"❌ 普羅米修斯綜效引擎異常: {e}")
+
+        return {
+            "action": "architecture_synergy_audit",
+            "findings": findings,
+            "status": "completed",
+        }
+
 WORKER_REGISTRY: Dict[str, Callable[[], BasePDCAWorker]] = {
     "system.gaia": lambda: GaiaCreationGateWorker(),
     "system-gaia": lambda: GaiaCreationGateWorker(),
     "gaia": lambda: GaiaCreationGateWorker(),
+    "system.prometheus": lambda: PrometheusSynergyWorker(),
+    "system-prometheus": lambda: PrometheusSynergyWorker(),
+    "prometheus": lambda: PrometheusSynergyWorker(),
     "the-paw": HephaestusPawWorker,
     "paw": HephaestusPawWorker,
     "hephaestus": HephaestusPawWorker,
