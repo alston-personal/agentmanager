@@ -1,0 +1,64 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261126-PROMETHEUS-ROLE-ONBOARDING",
+  "goal": "冊立奧林匹斯先見與盜火之神 system.prometheus（普羅米修斯），打破系統橫向經驗孤島，自動提煉成熟心法並推動舊規格演化重塑",
+  "risk_tier": "high",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "rhea.role_steward",
+    "themis.command_steward"
+  ],
+  "evidence_refs": [
+    "tests/test_prometheus_engine.py",
+    "tests/test_role_reality.py",
+    "tests/test_role_runtime.py",
+    "docs/CURRENT_STATE.md",
+    "scripts/documentation_reality_guard.py",
+    "scripts/systemic_engineering_preflight.py"
+  ],
+  "scope_inventory": [
+    ".agent/roles/registry.yaml 與 .agent/roles/instances/system_prometheus.md 冊立 system.prometheus",
+    "agent_core/prometheus_engine.py 實裝火種提煉與舊規格掃描引擎",
+    "agent_core/base_pdca.py 實裝 PrometheusSynergyWorker 並接入 WORKER_REGISTRY",
+    "agent_core/role_contracts.json 綁定角色合約與實體驗收指令",
+    "tests/test_prometheus_engine.py 建立完整測試驗證",
+    "docs/CURRENT_STATE.md 同步記錄"
+  ],
+  "existing_capabilities": [
+    "沿用 Rhea 角色譜系物理防篡改封印機制 (role_seal.py)",
+    "沿用 BasePDCAWorker 通用 PDCA 巡檢架構",
+    "沿用 growth-proof / G4 橫向經驗轉化規範"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：合併權限",
+    "Rhea 眾神之母：神殿譜系審批與物理封印蓋印",
+    "Themis 律法官：變更合規與 Doc-Code 身心合一審計"
+  ],
+  "failure_modes": [
+    "紙上假人 (Paper Phantom)：若角色僅有條文無實體 Worker 或執行憑證，Role Reality Guard 物理阻斷",
+    "越權搶奪：嚴禁 Prometheus 直接修改各專案業務代碼，僅輸出架構演化建議書供 Paw 與 Weaver 取用"
+  ],
+  "unknowns": [
+    "不同專案之間的 specs 格式若差異過大，需持續擴充 pattern matching 關鍵字庫"
+  ],
+  "implementation_plan": [
+    "建立 system_prometheus.md 實體檔案並在 registry.yaml 註冊",
+    "在 base_pdca.py 實裝 PrometheusSynergyWorker",
+    "實裝 prometheus_engine.py 與單元測試",
+    "於 agent-data 初始化實體資料層並執行初回 PDCA 巡檢取得憑證",
+    "透過 Rhea 執行 role reality guard 並蓋上實體封印",
+    "更新 CURRENT_STATE.md 並執行 doc guard 與 preflight check"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_prometheus_engine tests.test_role_reality tests.test_role_runtime -v (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py (PASS)"
+  ],
+  "rollback_plan": [
+    "若角色產生衝突，可由 Rhea 執行撤銷封印並將其 status 改為 deprecated 或退回 branch"
+  ]
+}

@@ -226,6 +226,16 @@
     ],
     "timeout_sec": 15
   },
+  "system.prometheus": {
+    "role_id": "system.prometheus",
+    "name": "Prometheus (Forethought, Fire-Bringer & Architecture Synergy Scout)",
+    "duties": "掌管跨專案架構綜效掃描、新觀念橫向傳播、舊規格重塑與現代化演化建議，提煉火種模式並產出演化抽取報告。",
+    "verification_command": "python3 agent_core/prometheus_engine.py",
+    "expected_artifacts": [
+      "/home/ubuntu/agentmanager/agent_core/prometheus_engine.py"
+    ],
+    "timeout_sec": 15
+  },
   "tiandao-cangxuan": {
     "role_id": "tiandao-cangxuan",
     "name": "蒼玄道人 Cangxuan (小說純潔度與字數審查)",
