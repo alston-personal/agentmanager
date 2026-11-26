@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -418,3 +419,60 @@ def check_node_supervisor() -> dict[str, Any]:
     if system == 'Linux':
         return check_linux_node_supervisor()
     return _non_windows_lifecycle()
+
+
+def provision_host_surfaces(*, node_id: str, realm_id: str, config_path: Path | str | None = None) -> dict[str, Any]:
+    """Automatically provision host AI surfaces (Antigravity, Claude, Codex) with AgentOS ONE constitution and MCP."""
+    results: dict[str, Any] = {"antigravity": "SKIPPED"}
+    home = Path.home()
+
+    # Antigravity Surface Provisioning
+    gemini_dir = home / ".gemini"
+    gemini_config_dir = gemini_dir / "config"
+    try:
+        gemini_config_dir.mkdir(parents=True, exist_ok=True)
+        gemini_md = gemini_dir / "GEMINI.md"
+        bootstrap_rule = f"""<!-- AGENTOS_ONE_BOOTSTRAP_START -->
+## AgentOS ONE bootstrap
+
+This enrolled client participates in AgentOS ONE through node {node_id}.
+Active Realm: {realm_id}
+Credential Isolation: Node-bound local adapter
+Continuation Authority: AgentOS ONE Canonical IR
+
+On the first invocation of a fresh Antigravity conversation, the hook resolves ONE's active continuation before the model is called and injects the exact current Canonical IR generation. The workspace is environment metadata, not continuation authority. For explicit live checks, use `one_status`, `one_resolve_active`, or `one_resolve(project)`.
+
+If the hook reports `ONE_IR_HEAD_UNRESOLVED`, do not reconstruct AgentOS state from workspace files, Pulse, PM2, local memory, or vendor history. Never expose Realm/node credentials. The local adapter owns the trust boundary. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
+<!-- AGENTOS_ONE_BOOTSTRAP_END -->
+"""
+        existing_md = gemini_md.read_text(encoding="utf-8") if gemini_md.exists() else ""
+        if "<!-- AGENTOS_ONE_BOOTSTRAP_START -->" not in existing_md:
+            gemini_md.write_text((existing_md.rstrip() + "\n\n" + bootstrap_rule).strip() + "\n", encoding="utf-8")
+
+        cfg_path = Path(config_path) if config_path else (Path(os.environ.get("LOCALAPPDATA", home)) / "AgentOS" / "state" / "client.json")
+        repo_root = Path(__file__).resolve().parents[1]
+        mcp_cfg_file = gemini_config_dir / "mcp_config.json"
+        mcp_data: dict[str, Any] = {}
+        if mcp_cfg_file.exists():
+            try:
+                mcp_data = json.loads(mcp_cfg_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        servers = mcp_data.setdefault("mcpServers", {})
+        servers["agentos-one"] = {
+            "args": ["-m", "agentos_node.one_mcp"],
+            "command": sys.executable,
+            "cwd": str(repo_root),
+            "env": {
+                "AGENTOS_CLIENT_CONFIG": str(cfg_path),
+                "AGENTOS_ONE_MCP_MODE": "client",
+                "PYTHONPATH": str(repo_root)
+            }
+        }
+        mcp_cfg_file.write_text(json.dumps(mcp_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        results["antigravity"] = "PROVISIONED"
+    except Exception as exc:
+        results["antigravity"] = f"ERROR: {exc}"
+
+    return results
+

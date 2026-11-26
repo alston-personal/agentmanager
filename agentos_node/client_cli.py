@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agentos_node.onboarding import check_node_supervisor, install_node_supervisor
+from agentos_node.onboarding import check_node_supervisor, install_node_supervisor, provision_host_surfaces
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
 
@@ -178,18 +178,34 @@ def main(argv: list[str] | None = None) -> int:
         def show_status(payload: dict[str, Any]) -> None:
             print(f'[agentos-client] enrollment status: {payload.get("status")}', flush=True)
 
-        config = ThinClientTransport.enroll_device(
-            one_url=args.one,
-            node_id=args.node_id,
-            policy=policy,
-            config_path=args.config,
-            realm_id=args.realm_id,
-            expires_minutes=args.expires_minutes,
-            timeout_seconds=args.timeout_seconds,
-            on_request=show_request,
-            on_status=show_status,
-        )
-        transport = build_client(config, policy)
+        is_already_enrolled = False
+        if not args.stage_only and args.config.exists():
+            try:
+                candidate_config = ClientConfig.load(args.config)
+                if candidate_config.node_id.lower() == args.node_id.lower() and candidate_config.node_token:
+                    candidate_transport = build_client(candidate_config, policy)
+                    health = candidate_transport.health()
+                    if health.get('ok'):
+                        print(f'[agentos-client] node {args.node_id} is already enrolled; performing idempotent self-reconciliation...', flush=True)
+                        config = candidate_config
+                        transport = candidate_transport
+                        is_already_enrolled = True
+            except Exception:
+                pass
+
+        if not is_already_enrolled:
+            config = ThinClientTransport.enroll_device(
+                one_url=args.one,
+                node_id=args.node_id,
+                policy=policy,
+                config_path=args.config,
+                realm_id=args.realm_id,
+                expires_minutes=args.expires_minutes,
+                timeout_seconds=args.timeout_seconds,
+                on_request=show_request,
+                on_status=show_status,
+            )
+            transport = build_client(config, policy)
         if args.stage_only:
             # Stage-only is an enrollment proof, not a system-level Realm switch
             # or independent ONE readiness receipt.
@@ -205,8 +221,10 @@ def main(argv: list[str] | None = None) -> int:
                                'heartbeat_recorded': bool(heartbeat.get('heartbeat_recorded'))}))
             return 0
         lifecycle = install_node_supervisor()
+        surfaces = provision_host_surfaces(node_id=config.node_id, realm_id=config.realm_id, config_path=args.config)
+        print(f'[agentos-client] host surface provisioning: {surfaces}', flush=True)
         completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
-        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion}))
+        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'surfaces': surfaces, 'completion': completion}))
         return 0 if completion.get('node_ready') else 2
 
     if args.command == 'enroll':
@@ -222,8 +240,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'manifest':
         print(render_json(transport.client.capability_manifest()))
     elif args.command == 'reconcile':
+        surfaces = provision_host_surfaces(node_id=config.node_id, realm_id=config.realm_id, config_path=args.config)
         from agentos_node.executor_reconcile import reconcile_executor_adoption
-        print(render_json(reconcile_executor_adoption(node_id=config.node_id)))
+        report = reconcile_executor_adoption(node_id=config.node_id)
+        report['surfaces_provisioned'] = surfaces
+        print(render_json(report))
     elif args.command == 'health':
         print(render_json(transport.health()))
     elif args.command == 'bootstrap':
@@ -232,8 +253,9 @@ def main(argv: list[str] | None = None) -> int:
         lifecycle = check_node_supervisor()
         if not lifecycle.get('supervisor_ready'):
             lifecycle = install_node_supervisor()
+        surfaces = provision_host_surfaces(node_id=config.node_id, realm_id=config.realm_id, config_path=args.config)
         readiness = transport.verify_readiness(lifecycle=lifecycle)
-        print(render_json({'ok': bool(readiness.get('node_ready')), 'lifecycle': lifecycle, 'readiness': readiness}))
+        print(render_json({'ok': bool(readiness.get('node_ready')), 'lifecycle': lifecycle, 'surfaces': surfaces, 'readiness': readiness}))
         return 0 if readiness.get('node_ready') else 2
     elif args.command == 'once':
         print(render_json({'receipts': transport.run_once()}))
