@@ -1,3 +1,18 @@
+## 2026-11-26 — Dynamic Port Manager & Fabric Heartbeat Health Defense (PR #2391)
+
+1. **Realm Fabric Isolated Release Import Hardening (`agentos_node/branch_resume_host_probe.py`, `agentos_node/branch_resume_guard.py`)**:
+   - 解決 Realm Fabric 隔離發布目錄中因欠缺頂層 `scripts/` 目錄導致 `ModuleNotFoundError: No module named 'scripts'` 的生產中斷隱患。
+   - 將 `branch_resume_guard.py` 納入 `agentos_node` 套件原生模組，並在 `scripts/branch_resume_guard.py` 與 `branch_resume_host_probe.py` 實施自癒向後相容。
+2. **Dynamic Port Manager & L7 System Health Probe (`scripts/system_health_probe.py`)**:
+   - 告別靜態連接埠探測死穴，動態向 Port Manager (`port_registry.json`) 查詢全生態登記服務清單（含 80, 443, 3041, 8780 等）。
+   - 支援 L4 TCP 連線 + L7 業務語意檢測（HTTP 200/301/308 健康檢查），杜絕「TCP 連通但 Gateway 502」的監控假象。
+3. **Cross-Node Fabric Heartbeat Freshness Guard (`scripts/system_health_probe.py`)**:
+   - 即時巡檢全域註冊節點（`vopc5750`, `dqa03backup`, `dqa03restore`, `oracle-exec`）的心跳時間戳與時效性（Freshness），若有常駐節點失聯超過 5 分鐘立即裁定異常。
+4. **Pantheon Blind Verifier & Role Duty Upgrade (`agent_core/base_pdca.py`, `agent_core/role_contracts.json`)**:
+   - 升級天道極客（`tiandao-geek`）與歐諾彌亞（`system.port_window_steward`）之盲審驗收指令，將全域端點業務健康與節點心跳時效性納入物理守門防線，並通過 Rhea 封印認證（24 個現役角色零紙上假人）。
+
+---
+
 ## 2026-11-26 — Prometheus Architecture Synergy & Fire-Bringer Scout Onboarding (PR #2390)
 
 1. **Prometheus Architecture Synergy & Fire-Bringer Scout (`system.prometheus` & `PrometheusSynergyWorker`)**:

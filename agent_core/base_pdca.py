@@ -705,6 +705,8 @@ class CangxuanEditorWorker(BasePDCAWorker):
         # 合併自身施工 findings 與盲審獨立驗收結果
         own_findings = do_data.get("findings", [])
         res["findings"] = own_findings + [f"🛡️ [盲審核驗] {f}" for f in res.get("findings", [])]
+        if do_data.get("leaked_terms"):
+            res["verdict"] = "FAIL"
         return res
 class GeekCultivatorWorker(BasePDCAWorker):
     """天道極客 (Tiandao-Geek): Server Infrastructure & Live Port Health Monitor."""
@@ -714,33 +716,27 @@ class GeekCultivatorWorker(BasePDCAWorker):
 
     def plan(self, cycle: int) -> dict[str, Any]:
         return {
-            "task": "散修視角之伺服器法陣與公共連接埠即時探測",
+            "task": "散修視角之全域端點、Port Manager 動態服務與跨機節點心跳即時探測",
             "source": "system_observability_pipeline",
         }
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
-        ports_to_check = [80, 443, 3041]
-        active_ports = []
         findings = []
-
-        for p in ports_to_check:
-            # Check port with nc or socket
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            result = sock.connect_ex(("127.0.0.1", p))
-            sock.close()
-            if result == 0:
-                active_ports.append(p)
-                findings.append(f"✅ 連接埠 {p} 法陣暢通")
-            else:
-                findings.append(f"❌ 連接埠 {p} 無響應")
+        try:
+            from scripts.system_health_probe import check_ports_from_manager, check_node_heartbeats
+            ports_ok, port_findings = check_ports_from_manager()
+            nodes_ok, node_findings = check_node_heartbeats(max_idle_seconds=300)
+            findings.extend(port_findings)
+            findings.extend(node_findings)
+            is_success = ports_ok and nodes_ok
+        except Exception as exc:
+            findings.append(f"❌ 全域健康探針執行異常: {exc}")
+            is_success = False
 
         return {
-            "action": "port_and_socket_probe",
-            "active_ports": active_ports,
+            "action": "dynamic_port_and_fabric_health_probe",
             "findings": findings,
-            "status": "completed",
+            "status": "completed" if is_success else "failed",
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
@@ -963,13 +959,20 @@ class EunomiaPortWorker(BasePDCAWorker):
 
     def plan(self, cycle: int) -> dict[str, Any]:
         return {
-            "task": "伺服器監聽連接埠審查、衝突檢測與排程避峰調度",
+            "task": "動態連接埠註冊審查、服務監聽比對、衝突防護與排程避峰調度",
             "source": "port_window_steward_scheduler",
         }
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
         findings = []
         try:
+            # 1. 查詢 Port Manager 註冊資料庫
+            from scripts.core_services.port_manager import load_registry
+            registry = load_registry()
+            registered_ports = {int(p): info for p, info in registry.items()}
+            findings.append(f"📋 歐諾彌亞審查：Port Manager 已註冊 {len(registered_ports)} 個通訊埠")
+
+            # 2. 獲取本機實際 LISTEN 的連接埠
             res = subprocess.run(["ss", "-tuln"], capture_output=True, text=True)
             active_ports = []
             for line in res.stdout.splitlines():
@@ -981,21 +984,28 @@ class EunomiaPortWorker(BasePDCAWorker):
                             port_str = addr.split(":")[-1]
                             if port_str.isdigit():
                                 active_ports.append(int(port_str))
-            
-            key_ports = {80: "HTTP Gateway", 443: "HTTPS Gateway", 3003: "Mio Intel Hub", 8780: "Realm Fabric"}
+
+            # 3. 雙向對齊核驗
+            key_ports = {80: "HTTP Gateway", 443: "HTTPS Gateway", 3041: "Dashboard Green", 8780: "Realm Fabric"}
+            missing_critical = []
             for p, name in key_ports.items():
                 if p in active_ports:
-                    findings.append(f"✅ 核心連接埠 :{p} ({name}) 正常監聽")
+                    findings.append(f"✅ 核心連接埠 :{p} ({name}) 監聽暢通")
                 else:
-                    findings.append(f"⚠️ 連接埠 :{p} ({name}) 未在本地監聽")
+                    findings.append(f"❌ 核心連接埠 :{p} ({name}) 未在本地監聽！")
+                    missing_critical.append(p)
+
+            # 檢測已登記核心專案在席狀況
+            status = "completed" if not missing_critical else "failed"
         except Exception as exc:
-            findings.append(f"❌ 連接埠掃描異常: {exc}")
+            findings.append(f"❌ 通訊埠核驗異常: {exc}")
+            status = "failed"
 
         return {
-            "action": "port_conflict_audit",
+            "action": "dynamic_port_governance_audit",
             "active_ports_count": len(active_ports),
             "findings": findings,
-            "status": "completed",
+            "status": status,
         }
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:

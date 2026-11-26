@@ -14,7 +14,10 @@ import stat
 from pathlib import Path
 import subprocess
 
-from scripts.branch_resume_guard import FreshnessError, inspect
+try:
+    from agentos_node.branch_resume_guard import FreshnessError, inspect
+except ImportError:
+    from scripts.branch_resume_guard import FreshnessError, inspect
 
 
 def _git(root: Path, *args: str) -> str:

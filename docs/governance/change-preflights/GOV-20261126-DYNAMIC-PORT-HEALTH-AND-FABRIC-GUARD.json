@@ -1,0 +1,36 @@
+{
+  "schema": "agentos.systemic-engineering-preflight/v1",
+  "preflight_id": "GOV-20261126-DYNAMIC-PORT-HEALTH-AND-FABRIC-GUARD",
+  "title": "Dynamic Port Manager, L7 System Health and Cross-Node Fabric Heartbeat Guard",
+  "status": "verified",
+  "created_at": "2026-11-26T05:23:00Z",
+  "author": "Antigravity Autonomous Core Engineer",
+  "target_branch": "main",
+  "source_branch": "fix/realm-fabric-isolated-import-and-health-audit",
+  "impact_scope": [
+    "agentos_node/branch_resume_host_probe.py",
+    "agentos_node/branch_resume_guard.py",
+    "scripts/branch_resume_guard.py",
+    "scripts/system_health_probe.py",
+    "agent_core/base_pdca.py",
+    "agent_core/role_contracts.json",
+    "tests/test_system_health_probe.py",
+    "docs/CURRENT_STATE.md"
+  ],
+  "risks_and_mitigations": [
+    {
+      "risk": "Isolated Realm Fabric release directory lacks scripts/ top-level package causing ModuleNotFoundError",
+      "mitigation": "Migrated branch_resume_guard into agentos_node package with backward-compatible aliases in scripts/"
+    },
+    {
+      "risk": "Blind verification failing due to static port probe or unreachable endpoints",
+      "mitigation": "Dynamic Port Manager queries and multi-tier L4+L7 checks with grace periods"
+    }
+  ],
+  "verification_evidence": {
+    "isolated_import_verified": true,
+    "system_health_probe_exit": 0,
+    "unit_tests_pass": true,
+    "doc_guard_pass": true
+  }
+}

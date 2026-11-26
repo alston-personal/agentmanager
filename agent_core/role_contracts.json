@@ -92,8 +92,8 @@
   "system.port_window_steward": {
     "role_id": "system.port_window_steward",
     "name": "Eunomia (Port & Window Steward)",
-    "duties": "物理探測核心監聽連接埠 (80, 443) 通暢性與調度視窗衝突，若核心連接埠斷線直接判定 FAIL。",
-    "verification_command": "python3 -c \"import socket; [socket.create_connection(('127.0.0.1', p), timeout=2).close() for p in (80, 443)]\"",
+    "duties": "物理探測核心監聽連接埠 (80, 443, 8780) 通暢性與調度視窗衝突，若核心連接埠斷線直接判定 FAIL。",
+    "verification_command": "python3 -c \"import socket; [socket.create_connection(('127.0.0.1', p), timeout=2).close() for p in (80, 443, 8780)]\"",
     "expected_artifacts": [],
     "timeout_sec": 10
   },
@@ -247,9 +247,9 @@
   "tiandao-geek": {
     "role_id": "tiandao-geek",
     "name": "極客道人 Geek (散修法陣與端點即時探測)",
-    "duties": "散修視角之伺服器法陣與公共連接埠即時探測，物理驗證 80, 443 通暢度。",
-    "verification_command": "python3 -c \"import socket; [socket.create_connection(('127.0.0.1', p), timeout=2).close() for p in (80, 443)]\"",
+    "duties": "散修視角之全域端點、Port Manager 動態服務 L7 業務健全與跨機節點心跳時效性即時探測。",
+    "verification_command": "python3 scripts/system_health_probe.py",
     "expected_artifacts": [],
-    "timeout_sec": 10
+    "timeout_sec": 15
   }
 }
