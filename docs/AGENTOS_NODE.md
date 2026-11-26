@@ -186,6 +186,18 @@ The 2026-08-25 Oracle validation proved the original v0.1 discovery/governance/r
 
 That evidence remains valid for those behaviors, but its enumerated capability list is not a permanent complete Node contract. Newer node/runtime capabilities must be verified from live advertisement and receipts.
 
+## Cross-Node Task Dispatching and Thin-Client OTA
+
+### 1. 跨節點派工契約（No Direct Git Commits for Task Dispatch）
+所有跨節點任務派遣（Cross-node Task Dispatching，例如從 `vopc5750` 派發任務至 `dqa03restore`）**嚴禁透過直接向 GitHub `agent-data` 或 `fabric.json` 發動 Git Commit / Push**：
+- **架構原則**：中央 Oracle Core（ONE 調度器）的 `RealmServer` 是記憶體與本機磁碟的權威主控，長輪詢節點依賴即時隊列喚醒。邊緣節點若直接對遠端 Git push，中央未 pull 便無法載入記憶體，導致任務永久滯後（`tasks: []`）。
+- **規範途徑**：邊緣節點必須透過 HTTP Runtime API `POST /v1/tasks` 或 CLI `agentos-client dispatch --target-node <node_id> --task-file <file>` 直接向中央 ONE 端點請求排隊，由 Central RealmServer 驗證呼叫者節點權限並即時寫入隊列，以零延遲喚醒 Long-poll 接收端。
+
+### 2. 邊緣節點 Over-The-Air (OTA) 版本收斂機制
+- Thin-Client 節點在週期 Heartbeat（`POST /v1/heartbeat`）時回報當前運行版本與環境。
+- Central ONE 回傳最新的 `target_release_commit` 與 `target_release_ref`。
+- 若檢測到版本落後且節點處於空閒（Idle）狀態，Thin-Client 觸發自動原地 OTA 收斂，確保多節點叢集代碼與契約零時差身心合一。
+
 ## Legacy NodeRegistry snapshot recovery (source contract)
 
 NodeRegistry ordinarily reads one validated JSON snapshot and publishes under its existing exclusive lock using atomic replacement. For historical data consisting of **two or more complete, consecutive, individually valid snapshots from exactly one Realm**, it may read the final complete snapshot as the latest state. Missing, truncated, non-object, malformed or cross-Realm segments must fail closed; no attempt is made to infer or repair arbitrary corruption. The next authorized mutation uses the existing locked atomic publication path to canonicalize the file. This is a source-level compatibility behavior, not a claim that any current Oracle registry is corrupted or that runtime recovery has been exercised.

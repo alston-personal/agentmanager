@@ -1273,7 +1273,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         'source_ref': str(policy.get('desired_source_ref') or 'feature/realm-node-fabric-readiness'),
                         'source_commit': desired,
                     })
-                self._send(200, {'ok': True, 'node': node, 'auto_ota': auto_ota})
+                self._send(200, {
+                    'ok': True,
+                    'node': node,
+                    'auto_ota': auto_ota,
+                    'target_release_commit': desired or None,
+                    'target_release_ref': str(policy.get('desired_source_ref') or '') or None,
+                })
                 return
             if parsed.path == '/v1/benchmark':
                 body = self._json_body()
@@ -1287,6 +1293,22 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
+                return
+            if parsed.path == '/v1/tasks':
+                body = self._json_body()
+                token = self._bearer()
+                caller_node_id = str(body.get('caller_node_id') or body.get('node_id') or '')
+                target_node_id = str(body.get('target_node_id') or body.get('node_id') or '')
+                task = dict(body.get('task') or {})
+                if not task:
+                    raise ValueError('task payload is required')
+                # Authenticate caller node or controller
+                if caller_node_id:
+                    self.fabric.authenticate(caller_node_id, token)
+                else:
+                    self._authorize_controller()
+                queued = self.fabric.queue_task(target_node_id, task)
+                self._send(200, {'ok': True, 'queued': queued})
                 return
             # Compatibility fence: preserve the live-accepted #64 transport contract.
             # Privileged runtime/controller surfaces below remain separately authenticated.
