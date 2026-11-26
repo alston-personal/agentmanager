@@ -6,6 +6,10 @@
    - 實裝 `agent_core/prometheus_engine.py` 與 `PrometheusSynergyWorker`，提煉近期已驗證之成熟火種模式（如 Runtime API 派工、Thin-Client OTA、Dynamic Avatar Pull 等），並自動比對既有規格與代碼庫，產出《架構綜效與演化抽取建議書》（`agent-data/synergy/latest_synergy_report.json`）。
 2. **Role Seal CI Stateless Fence (`agent_core/role_seal.py`)**:
    - 強化 GitHub Actions 無狀態 CI 環境中的瑞亞神殿封印檢查，優雅處理跨容器磁碟路徑的 PermissionError 與不存在情境，確保 CI 與實體 Oracle 環境一致。
+2. **Hermes Recon Ledger to Prometheus Synergy Pipeline (`agent_core/prometheus_engine.py`)**:
+   - 實裝 Hermes 外採武器庫（`recon_ledger.json`）與 Prometheus 架構演化引擎之雙向對接。
+   - **正向約束 (Forward Adoption)**：引進新武器（如 `taste-skill`）時自動生成規範建議，由 Gaia 與 Weaver 注入未來新專案 PRD；
+   - **逆向重塑 (Retroactive Modernization)**：自動掃描全域專案資產（如 `social-galaxy`、`ip-genome-studio`），產出具體升級重構提案至 `strategic_uplift_proposals`，交由 The Paw 認領實施，徹底打破「引進武器卻無人重審舊代碼」的斷層。
    - 經 Rhea Role Steward 實體真實性守門審查通過並蓋印封印（`scripts/rhea_role_steward.py --seal`，24 個 Active 角色零紙上假人），通過 `tests/test_prometheus_engine.py` (3/3 PASS) 與全體角色盲審。
 
 ---

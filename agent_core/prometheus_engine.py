@@ -21,16 +21,40 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def scan_fire_patterns(repo_root: Path) -> list[dict[str, Any]]:
-    """Extract validated fire patterns from recent governance, CURRENT_STATE and growth proofs."""
+def scan_fire_patterns(repo_root: Path, data_root: Path | None = None) -> list[dict[str, Any]]:
+    """Extract validated fire patterns from internal verified PRs and Hermes external recon ledger."""
     patterns = []
 
-    # Pattern 1: Runtime API Dispatching (no direct Git push for queues)
+    # 1. 接入 Hermes 技術信使外採成果 (External Weapons from Hermes recon_ledger.json)
+    if data_root is not None:
+        hermes_ledger = data_root / "personas" / "sector-hermes" / "recon_ledger.json"
+        if hermes_ledger.is_file():
+            try:
+                ledger_data = json.loads(hermes_ledger.read_text(encoding="utf-8"))
+                for rec in ledger_data.get("records", []):
+                    patterns.append({
+                        "pattern_id": f"hermes-weapon-{rec.get('id', 'unknown')}",
+                        "name": f"Hermes 外採武器: {rec.get('name', 'unknown')}",
+                        "origin": f"Hermes Recon / {rec.get('target_repo', '')}",
+                        "principle": rec.get("summary", ""),
+                        "category": rec.get("category", "General"),
+                        "source_kind": "hermes_external_weapon",
+                        "output_skill": rec.get("output_skill", ""),
+                        "applicability": [
+                            "frontend", "ui_generation", "social-galaxy", "ip-genome-studio", "metashield-protocol"
+                        ],
+                        "recommendation": f"正向推動新前端專案強制搭載 {rec.get('name')}，逆向檢驗既有前端頁面並發起反 AI-slop 重塑。"
+                    })
+            except Exception as e:
+                pass
+
+    # 2. 內部突破火種模式 (Internal Verified Innovations)
     patterns.append({
         "pattern_id": "pattern-runtime-api-dispatch",
         "name": "跨節點 Runtime API 即時排程（根絕 Git Push 任務隊列）",
         "origin": "PR #2389 / agent_core/realm_server.py / POST /v1/tasks",
         "principle": "邊緣節點必須透過中央調度器 HTTP API 派工，不得自行 commit/push 到 fabric.json，以確保長輪詢即時喚醒。",
+        "source_kind": "internal_architecture_innovation",
         "applicability": [
             "dqa03backup", "vopc5750", "redmine_qa_workflow", "monthly_report", "matters_publisher"
         ],
@@ -43,6 +67,7 @@ def scan_fire_patterns(repo_root: Path) -> list[dict[str, Any]]:
         "name": "Thin-Client 心跳 OTA 目標版本自動收斂",
         "origin": "PR #2389 / agentos_node/thin_client_transport.py",
         "principle": "在 Heartbeat 回傳 target_release_commit，由邊緣節點監控 runtime-provenance.json 原地自動收斂升級。",
+        "source_kind": "internal_architecture_innovation",
         "applicability": [
             "vopc5750", "VO10005870", "dqa03restore", "dqa03backup", "mbpr"
         ],
@@ -55,6 +80,7 @@ def scan_fire_patterns(repo_root: Path) -> list[dict[str, Any]]:
         "name": "Atlas Avatar 動態 Persona 與 Canonical IR 拉取端點",
         "origin": "PR #2388 / agent_core/realm_server.py / GET /v1/atlas/avatar",
         "principle": "外部 GPTs 與 Google Gems 不再硬編碼靜態 Prompt，改由動態拉取中央最新降臨人格與目標。",
+        "source_kind": "internal_architecture_innovation",
         "applicability": [
             "Google Gems", "ChatGPT Custom GPTs", "Web Agent Surface"
         ],
@@ -93,8 +119,40 @@ def scan_specs_for_modernization(data_root: Path) -> list[dict[str, Any]]:
 
 
 def generate_synergy_report(repo_root: Path, data_root: Path) -> dict[str, Any]:
-    patterns = scan_fire_patterns(repo_root)
+    patterns = scan_fire_patterns(repo_root, data_root)
     outdated_specs = scan_specs_for_modernization(data_root)
+
+    hermes_weapons = [p for p in patterns if p.get("source_kind") == "hermes_external_weapon"]
+    internal_innovations = [p for p in patterns if p.get("source_kind") == "internal_architecture_innovation"]
+
+    strategic_proposals = [
+        {
+            "proposal_id": "UPLIFT-20261126-001",
+            "title": "跨節點工作流全面改採 Runtime API 派工 (DQA / Monthly Report / Redmine QA)",
+            "actionable_owner": "sector.paw",
+            "target_specs": ["agent-data/specs/dqa_system_monitor.md", "agent-data/specs/monthly_report.md"],
+            "benefit": "徹底消除 Git 倉庫非同步導致的任務空轉，實現跨機秒級喚醒。"
+        },
+        {
+            "proposal_id": "UPLIFT-20261126-002",
+            "title": "第三方 LLM 界面全面導入 Atlas Avatar 動態端點",
+            "actionable_owner": "sector.weaver",
+            "target_specs": ["agent-data/specs/gemini-web-executor-hook.md"],
+            "benefit": "解決 Web GPT / Google Gems 歷史會話狀態落差與手動同步成本。"
+        }
+    ]
+
+    # 若 Hermes 引進了前端武器，自動追加對舊前端專案的逆向重塑提案
+    if hermes_weapons:
+        for w in hermes_weapons:
+            strategic_proposals.append({
+                "proposal_id": f"UPLIFT-HERMES-{w.get('pattern_id')}",
+                "title": f"既有前端資產導入 {w.get('name')} 執行 Anti-AI-Slop 翻新 (Retroactive Modernization)",
+                "actionable_owner": "sector.paw",
+                "target_projects": ["social-galaxy", "ip-genome-studio", "metashield-protocol"],
+                "applied_weapon": w.get("name"),
+                "benefit": "以專業藝術指導與 anti-slop 守衛翻新過往產出的 generic AI 頁面。"
+            })
 
     return {
         "schema": SCHEMA,
@@ -102,25 +160,12 @@ def generate_synergy_report(repo_root: Path, data_root: Path) -> dict[str, Any]:
         "scout_name": "普羅米修斯 Prometheus (先見之神與盜火者)",
         "generated_at": _utc_now(),
         "fire_patterns_count": len(patterns),
+        "hermes_external_weapons_count": len(hermes_weapons),
+        "internal_innovations_count": len(internal_innovations),
         "fire_patterns": patterns,
         "outdated_specs_identified": len(outdated_specs),
         "outdated_specs": outdated_specs,
-        "strategic_uplift_proposals": [
-            {
-                "proposal_id": "UPLIFT-20261126-001",
-                "title": "跨節點工作流全面改採 Runtime API 派工 (DQA / Monthly Report / Redmine QA)",
-                "actionable_owner": "sector.paw",
-                "target_specs": ["agent-data/specs/dqa_system_monitor.md", "agent-data/specs/monthly_report.md"],
-                "benefit": "徹底消除 Git 倉庫非同步導致的任務空轉，實現跨機秒級喚醒。"
-            },
-            {
-                "proposal_id": "UPLIFT-20261126-002",
-                "title": "第三方 LLM 界面全面導入 Atlas Avatar 動態端點",
-                "actionable_owner": "sector.weaver",
-                "target_specs": ["agent-data/specs/gemini-web-executor-hook.md"],
-                "benefit": "解決 Web GPT / Google Gems 歷史會話狀態落差與手動同步成本。"
-            }
-        ]
+        "strategic_uplift_proposals": strategic_proposals
     }
 
 

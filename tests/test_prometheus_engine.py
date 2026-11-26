@@ -19,12 +19,28 @@ class TestPrometheusEngine(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_scan_fire_patterns_extracts_core_innovations(self):
-        patterns = scan_fire_patterns(self.root)
-        self.assertGreaterEqual(len(patterns), 3)
+        # Create a mock Hermes recon ledger
+        hermes_dir = self.data_root / "personas" / "sector-hermes"
+        hermes_dir.mkdir(parents=True, exist_ok=True)
+        (hermes_dir / "recon_ledger.json").write_text("""{
+  "schema": "agentos.hermes-recon-ledger/v1",
+  "records": [
+    {
+      "id": "recon-mock-weapon",
+      "name": "mock-weapon (v1.0)",
+      "target_repo": "https://github.com/mock/weapon",
+      "summary": "Mock anti-slop engine"
+    }
+  ]
+}""", encoding="utf-8")
+
+        patterns = scan_fire_patterns(self.root, self.data_root)
+        self.assertGreaterEqual(len(patterns), 4)
         pattern_ids = {p["pattern_id"] for p in patterns}
         self.assertIn("pattern-runtime-api-dispatch", pattern_ids)
         self.assertIn("pattern-thin-client-heartbeat-ota", pattern_ids)
         self.assertIn("pattern-dynamic-atlas-avatar-endpoint", pattern_ids)
+        self.assertIn("hermes-weapon-recon-mock-weapon", pattern_ids)
 
     def test_scan_specs_detects_outdated_assumptions(self):
         # Create an outdated spec with legacy git push dispatching
