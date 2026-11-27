@@ -1,0 +1,58 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261127-NODE-ALIGNMENT-SKILL",
+  "goal": "建立 AgentOS 全域跨節點身心校準技能 (node_alignment Skill)，提供中樞與邊緣節點在重啟或中斷後的連線時效、版本一致性、能力邊界校準與報告憑證",
+  "risk_tier": "medium",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "governance.keeper",
+    "sector.claw"
+  ],
+  "evidence_refs": [
+    "agent_core/node_alignment.py",
+    ".agent/skills/node_alignment/SKILL.md",
+    "tests/test_node_alignment.py",
+    "docs/CURRENT_STATE.md"
+  ],
+  "scope_inventory": [
+    "建立 agent_core/node_alignment.py 提供全域跨節點校準引擎 NodeAlignmentEngine",
+    "建立 .agent/skills/node_alignment/SKILL.md 提供身心合一校準技能定義與引導手冊",
+    "撰寫 tests/test_node_alignment.py 驗證全域節點活性判定、異常告警與表面探測派發",
+    "同步更新 docs/CURRENT_STATE.md 滿足文檔現實律"
+  ],
+  "existing_capabilities": [
+    "沿用 agent_core/realm_fabric.py 之節點註冊資料與心跳時效",
+    "沿用 receipts.sqlite3 執行憑證記錄機制",
+    "沿用 agent.surface.inspect 節點表面探測能力"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：PR 合併授權",
+    "Themis 律法官：文檔與代碼身心合一"
+  ],
+  "failure_modes": [
+    "節點心跳延遲超標：標記為 stale 並提示使用者檢查 Thin Client 守護進程",
+    "節點離線：列入 anomalies 異狀清單並提供 /join 恢復指引"
+  ],
+  "unknowns": [
+    "部分休眠設備心跳週期較長：支援自訂 max_stale_seconds 寬限期"
+  ],
+  "implementation_plan": [
+    "實裝 agent_core/node_alignment.py",
+    "建立 .agent/skills/node_alignment/SKILL.md",
+    "編寫單元測試覆蓋多態校準情境",
+    "完成 Preflight 與 Doc Guard 檢查"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_node_alignment -v (PASS)",
+    "python3 agent_core/node_alignment.py (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --manifest docs/governance/change-preflights/GOV-20261127-NODE-ALIGNMENT-SKILL.json (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)"
+  ],
+  "rollback_plan": [
+    "若發生異常可透過 git revert 撤銷該 PR"
+  ]
+}
