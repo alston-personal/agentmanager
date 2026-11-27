@@ -1,3 +1,11 @@
+## 2026-11-26 — Fix: Gateway Allowlist for Governed Cross-Node Delegation Routes
+
+1. **Realm Next.js Gateway Allowlist Synchronization (`dashboard/app/api/agentos/[...path]/route.ts`)**:
+   - 補齊 Gateway 反向代理之白名單路由，在 `ALLOWED['POST']` 加入 `"/v1/tasks"`, `"/v1/delegation/request"`，在 `ALLOWED['GET']` 加入 `"/v1/delegation/receipt"`, `"/v1/receipts"`。
+   - 解決客戶端節點發起合法跨節點委託時被 Gateway 誤攔截為 `404 Realm gateway route not allowlisted` 的斷層。
+
+---
+
 ## 2026-11-26 — Governed Cross-Node Delegation Protocol & Capability Fencing (PR #2393)
 
 1. **Governed Cross-Node Delegation Protocol (`agentos.cross-node-delegation/v1`)**:
