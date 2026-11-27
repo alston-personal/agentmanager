@@ -1,0 +1,64 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261127-EXPERIENCE-RECOVERY-AND-BRANCH-GUARD",
+  "goal": "全面收斂滯留於 codex/experience-evidence-promotion 之執行者經驗回歸與對話回填體系，並實裝 unmerged_branch_guard.py 物理防呆守衛杜絕孤島分支假性統一",
+  "risk_tier": "medium",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "governance.keeper",
+    "sector.claw"
+  ],
+  "evidence_refs": [
+    "agentos_node/executor_experience_recovery.py",
+    "agentos_node/conversation_backfill.py",
+    "agent_core/historical_ir.py",
+    "scripts/unmerged_branch_guard.py",
+    "tests/test_unmerged_branch_guard.py",
+    "tests/test_executor_experience_recovery.py",
+    "docs/CURRENT_STATE.md"
+  ],
+  "scope_inventory": [
+    "合入 agentos_node/executor_experience_recovery.py 支援跨節點加入時本機執行者探索與收割",
+    "合入 agentos_node/conversation_backfill.py 支援對話歷史轉化為 Historical IR",
+    "合入 agent_core/historical_ir.py 與相關歷史 IR 調度機制",
+    "升級 agentos_node/client_cli.py 在 node join 時自動觸發經驗回歸與表面配置",
+    "建立 scripts/unmerged_branch_guard.py 物理守衛掃描滯留超過 14 天之孤島分支",
+    "撰寫 tests/test_unmerged_branch_guard.py 單元測試",
+    "更新 docs/CURRENT_STATE.md 與規格文件"
+  ],
+  "existing_capabilities": [
+    "沿用 agentos_node/thin_client_transport.py",
+    "沿用 FileSessionBridge 通信機制",
+    "沿用 client_cli.py 之 join/enroll 指令架構"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：PR 合併授權",
+    "Themis 律法官：文檔與代碼身心合一"
+  ],
+  "failure_modes": [
+    "分支長期未合併：透過 unmerged_branch_guard 自動告警與阻斷，嚴禁虛假對齊",
+    "經驗收割越權存取私有對話：強制宣告 agent.context.harvest 與 FileSessionBridge 白名單，拒絕私自讀檔"
+  ],
+  "unknowns": [
+    "不同作業系統對話記錄目錄差異：透過 projects_root 參數動態傳遞與嚴格邊界判定"
+  ],
+  "implementation_plan": [
+    "合入核心代碼與測試",
+    "實裝 unmerged_branch_guard.py",
+    "執行全套測試與文檔現實守衛",
+    "推送收斂 PR"
+  ],
+  "verification_plan": [
+    "PYTHONPATH=. pytest tests/test_executor_experience_recovery.py tests/test_conversation_backfill.py tests/test_historical_ir.py (PASS)",
+    "python3 -m unittest tests.test_unmerged_branch_guard -v (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --manifest docs/governance/change-preflights/GOV-20261127-EXPERIENCE-RECOVERY-AND-BRANCH-GUARD.json (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)"
+  ],
+  "rollback_plan": [
+    "若發生異常可透過 git revert 撤銷該 PR"
+  ]
+}
