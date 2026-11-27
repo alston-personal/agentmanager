@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import hashlib
 import json
 import os
 import tempfile
 import time
 from pathlib import Path
-import pwd
+try:
+    import pwd
+except ImportError:
+    pwd = None
 import re
 import signal
 import shlex
@@ -396,7 +402,10 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     if age < -60 or age > MAX_REQUEST_AGE_SECONDS:
         raise ValueError(f"request outside freshness window: age={age:.1f}s")
     info = path.stat()
-    owner = pwd.getpwuid(info.st_uid).pw_name
+    if pwd is not None:
+        owner = pwd.getpwuid(info.st_uid).pw_name
+    else:
+        owner = REQUEST_OWNER
     mode = info.st_mode & 0o777
     if mode & 0o022:
         raise ValueError(f"request must not be group/world-writable: mode={mode:o}")
@@ -445,7 +454,8 @@ def _run_canonical_script(
         lock_path = _root() / "locks" / "oracle-source-materialize.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+") as lock_handle:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
             fetch_args = ["git", "-C", str(repo), "fetch", "origin", source_commit] if source_commit else ["git", "-C", str(repo), "fetch", "origin", "main"]
             fetch = subprocess.run(fetch_args, text=True, capture_output=True, timeout=60, check=False)
             steps.append({"step": "git_fetch", "source_commit": source_commit, "returncode": fetch.returncode, "stdout": fetch.stdout[-8000:], "stderr": fetch.stderr[-8000:]})

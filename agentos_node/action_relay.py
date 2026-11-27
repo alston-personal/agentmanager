@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import grp
+try:
+    import grp
+except ImportError:
+    grp = None
 import hashlib
 import json
 import os
-import pwd
+try:
+    import pwd
+except ImportError:
+    pwd = None
 import re
 from pathlib import Path
 import stat
@@ -37,6 +43,8 @@ def _share(path: Path, *, directory: bool = False) -> None:
     mode are already exactly the governed values; group membership alone does
     not grant chmod/chown of another user's file.
     """
+    if os.name == "nt" or grp is None:
+        return
     gid = grp.getgrnam(SHARED_GROUP).gr_gid
     desired_mode = 0o2770 if directory else 0o660
     try:
@@ -54,6 +62,8 @@ def _share(path: Path, *, directory: bool = False) -> None:
 
 def _verify_continuation_capsule_owner(path: Path) -> None:
     """Narrow Unix ownership gate; not a substitute for ONE authorization."""
+    if os.name == "nt" or pwd is None or grp is None:
+        return
     info = path.lstat()
     expected_uid = pwd.getpwnam("agentos-node").pw_uid
     expected_gid = grp.getgrnam(SHARED_GROUP).gr_gid
