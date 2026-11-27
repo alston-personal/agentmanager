@@ -1,0 +1,64 @@
+{
+  "schema": "agentos.systemic-change-preflight/v1",
+  "change_id": "GOV-20261127-WEB-ONE-CLICK-JOIN",
+  "goal": "建立 Web-Native 原生一鍵入籍體驗 (Web One-Click Join)，提供引導下載與自動密鑰交換，同時保持終端機 curl/PowerShell 入籍之透明相容性",
+  "risk_tier": "medium",
+  "phase": "implementation",
+  "status": "in-progress",
+  "ready_for_implementation": true,
+  "review_status": "reviewed",
+  "reviewers": [
+    "alston",
+    "governance.keeper",
+    "sector.claw"
+  ],
+  "evidence_refs": [
+    "agent_core/web_join/index.html",
+    "agent_core/web_join/agentos-join.cmd",
+    "agent_core/web_join/agentos-join.sh",
+    "tests/test_web_join_onboarding.py",
+    "docs/CURRENT_STATE.md"
+  ],
+  "scope_inventory": [
+    "建立 agent_core/web_join/index.html 提供現代化動態入籍介面與握手階段可視化",
+    "建立 agent_core/web_join/agentos-join.cmd 提供 Windows 一鍵免配置引導啟動檔",
+    "建立 agent_core/web_join/agentos-join.sh 提供 macOS/Linux 一鍵免配置引導啟動檔",
+    "在 Nginx 閘道層實裝基於 User-Agent 的多端協議協商 (Content Negotiation)，瀏覽器訪問展示視覺化引導，終端機訪問保持原生腳本執行",
+    "開通 /join/download/windows 與 /join/download/macos-linux 下載端點",
+    "撰寫 tests/test_web_join_onboarding.py 驗證網頁內容、引導檔合法性與動態端點",
+    "同步更新 docs/CURRENT_STATE.md 滿足文檔現實律"
+  ],
+  "existing_capabilities": [
+    "沿用 scripts/install_thin_client_linux.sh 與 scripts/bootstrap_clean_windows_node.ps1",
+    "沿用 /_agentos_bootstrap_linux 與 /_agentos_bootstrap_win 內部端點",
+    "沿用 Central ONE Realm Fabric (Port 8780) 之密鑰交換與節點入籍協議"
+  ],
+  "authority_map": [
+    "GitHub protected branch 人工核准：PR 合併授權",
+    "Themis 律法官：文檔與代碼身心合一"
+  ],
+  "failure_modes": [
+    "終端機 curl 或 PowerShell 誤判為瀏覽器：透過嚴格 User-Agent 正則在 Nginx 優先匹配並改寫為 internal 腳本",
+    "下載端點遺失引導檔：透過靜態 alias 確保 200 OK 且帶有 Attachment Content-Disposition",
+    "前端 Health 探測逾時：非阻塞非同步 fetch，不影響使用者手動點擊下載"
+  ],
+  "unknowns": [
+    "部分特殊瀏覽器自定義 User-Agent：預設回退至 HTML 網頁介面，頁面中仍提供終端機複製指令"
+  ],
+  "implementation_plan": [
+    "建立 agent_core/web_join 相關前端與腳本資產",
+    "更新 Nginx 設定檔實現協議協商與下載路由",
+    "撰寫單元測試覆蓋多端入籍體驗",
+    "更新 docs/CURRENT_STATE.md 與規格文件"
+  ],
+  "verification_plan": [
+    "python3 -m unittest tests.test_web_join_onboarding -v (PASS)",
+    "python3 scripts/systemic_engineering_preflight.py --manifest docs/governance/change-preflights/GOV-20261127-WEB-ONE-CLICK-JOIN.json (PASS)",
+    "python3 scripts/documentation_reality_guard.py --worktree (PASS)",
+    "curl 多端 User-Agent 測試 (PASS)"
+  ],
+  "rollback_plan": [
+    "若發生異常可透過 git revert 撤銷該 PR",
+    "Nginx 可快速還原回純文字輸出"
+  ]
+}

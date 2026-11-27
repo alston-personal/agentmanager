@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentOS Universal Node Join | 一鍵智慧入籍中心</title>
+  <link rel="icon" href="/dashboard/favicon.ico" type="image/x-icon">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(18, 24, 38, 0.85);
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.35);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.35);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.15) 0%, transparent 60%),
+        radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .container {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px var(--accent-glow);
+      backdrop-filter: blur(16px);
+      text-align: center;
+      position: relative;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(56, 189, 248, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p.desc {
+      color: var(--text-muted);
+      font-size: 1rem;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+    .actions-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    @media (max-width: 600px) {
+      .actions-grid { grid-template-columns: 1fr; }
+    }
+    .btn-action {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      text-decoration: none;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-action:hover {
+      background: rgba(56, 189, 248, 0.08);
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px var(--accent-glow);
+    }
+    .btn-action.primary {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(14, 165, 233, 0.25));
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .btn-action.primary:hover {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.4));
+      border-color: var(--accent);
+    }
+    .icon {
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+    .btn-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .btn-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .status-card {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: left;
+    }
+    .status-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .steps-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      transition: color 0.3s;
+    }
+    .step-item.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .step-item.done {
+      color: var(--success);
+    }
+    .step-indicator {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+    .step-item.done .step-indicator {
+      background: var(--success);
+      color: #000;
+      border-color: var(--success);
+    }
+    .footer-note {
+      margin-top: 24px;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .footer-note code {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">
+      <div class="pulse-dot"></div>
+      AgentOS Central ONE Realm · 節點入籍中心
+    </div>
+    <h1>一鍵加入 AgentOS 協同網絡</h1>
+    <p class="desc">
+      無需複雜設定或終端機指令。點擊下方對應系統之按鈕啟動引導檔，本機將自動與 Central ONE 完成密鑰配對、環境收斂並常駐守護。
+    </p>
+
+    <div class="actions-grid">
+      <a href="/join/download/windows" class="btn-action primary" id="btn-win">
+        <span class="icon">🪟</span>
+        <span class="btn-title">Windows 一鍵啟動</span>
+        <span class="btn-sub">下載 agentos-join.cmd 點擊即執行</span>
+      </a>
+      <a href="/join/download/macos-linux" class="btn-action" id="btn-unix">
+        <span class="icon">🍎 / 🐧</span>
+        <span class="btn-title">macOS / Linux 一鍵啟動</span>
+        <span class="btn-sub">下載 agentos-join.sh 雙擊或執行</span>
+      </a>
+    </div>
+
+    <div class="status-card">
+      <div class="status-header">
+        <span>全自動互動握手流程 (Auto Handshake)</span>
+        <span id="realm-label">Realm: realm-alston</span>
+      </div>
+      <ul class="steps-list">
+        <li class="step-item done" id="step-1">
+          <div class="step-indicator">✓</div>
+          <span>中央 ONE 網關連線就緒 (Port 8780 / Gateway 443)</span>
+        </li>
+        <li class="step-item active" id="step-2">
+          <div class="step-indicator">2</div>
+          <span>啟動本機配對引導程序（點擊上方按鈕執行）</span>
+        </li>
+        <li class="step-item" id="step-3">
+          <div class="step-indicator">3</div>
+          <span>雙向 Token 金鑰交換與節點身份註冊</span>
+        </li>
+        <li class="step-item" id="step-4">
+          <div class="step-indicator">4</div>
+          <span>能力圍欄配置完成，啟動 Thin Client 守護進程</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="footer-note">
+      工程調試相容提示：在終端機執行 <code>curl -sSL https://studio.milkcat.org/join | bash</code> 或 <code>irm https://studio.milkcat.org/join | iex</code> 仍將繼續自動原生支援。
+    </div>
+  </div>
+
+  <script>
+    // 自動即時查詢節點活性
+    async function checkHealth() {
+      try {
+        const res = await fetch('/v1/health');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.realm_id) {
+            document.getElementById('realm-label').textContent = 'Realm: ' + data.realm_id;
+          }
+        }
+      } catch (e) {}
+    }
+    checkHealth();
+  </script>
+</body>
+</html>

@@ -1,3 +1,23 @@
+## 2026-11-27 — Web-Native One-Click Join & Auto-Handshake Launcher (PR #2395)
+
+1. **Web-Native One-Click Join Experience (`agent_core/web_join/index.html`)**:
+   - 解決以往新電腦入籍需手動打開終端機輸入繁瑣指令的進入門檻，升級為現代化、視覺化的原生「一鍵智慧入籍中心」。
+   - 提供 4 階段全自動互動握手可視化指示器（中央 ONE 網關連線就緒 ➔ 啟動本機配對引導 ➔ 金鑰交換與節點註冊 ➔ Thin Client 守護進程運行）。
+   - 整合即時 `/v1/health` 活性檢測與 Realm 識別，並保留工程級終端機指令相容提示。
+2. **Platform-Specific One-Click Launchers (`agent_core/web_join/agentos-join.cmd`, `agent_core/web_join/agentos-join.sh`)**:
+   - 提供 Windows 免配置批次啟動檔（`agentos-join.cmd`），點擊後自動透過 PowerShell 執行無感入籍並完成守護安裝。
+   - 提供 macOS / Linux 獨立 Shell 啟動檔（`agentos-join.sh`），點擊或終端機執行後自動串接中央 Fabric。
+3. **Gateway Multi-Client Content Negotiation & Transparent Compatibility**:
+   - 於 Nginx 閘道層依據客戶端 User-Agent 實現精準內容協商（Content Negotiation）：
+     - 瀏覽器（Web Browser）訪問 `/join` 自動導向視覺化一鍵入籍介面；
+     - 終端機客戶端（`curl`, `wget`, `PowerShell`）訪問 `/join` 保持透明相容，直接串流回傳原生安裝腳本；
+     - 提供 `/join/download/windows` 與 `/join/download/macos-linux` 專屬二進位下載端點。
+4. **Unit Tests & Governance Preflight Verification (`tests/test_web_join_onboarding.py`, `GOV-20261127-WEB-ONE-CLICK-JOIN.json`)**:
+   - 新增單元測試驗證視覺介面、啟動腳本與下載路由完整性。
+   - 通過 Systemic Engineering Preflight 體系化盤點與 Documentation Reality Guard 身心合一守衛。
+
+---
+
 ## 2026-11-26 — Governed Cross-Node Delegation Protocol & Capability Fencing (PR #2393)
 
 1. **Governed Cross-Node Delegation Protocol (`agentos.cross-node-delegation/v1`)**:
