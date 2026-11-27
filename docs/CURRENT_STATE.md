@@ -1,3 +1,17 @@
+## 2026-11-27 — Cross-Node Alignment Engine & Alignment Skill (PR #2397)
+
+1. **Cross-Node Alignment Engine (`agent_core/node_alignment.py`)**:
+   - 解決分散式節點架構在系統重啟（Crash/Restart）、網路重連或中樞更迭後，各節點狀態、連線時效、版本一致性與能力邊界脫節之隱患。
+   - 建立 `NodeAlignmentEngine`，實裝校準三支柱（Three Pillars）：連線心跳時效檢測、版本代碼對齊、執行表面與能力邊界校準。
+   - 產出不可否認之全域校準憑證 `agentos.node-alignment-receipt/v1`，自動識別 `live`、`stale` 與 `offline` 節點並附帶自動修復建議。
+2. **Node Alignment Standard Skill (`.agent/skills/node_alignment/SKILL.md`)**:
+   - 建立正規 Agent Skill，規範重啟後一鍵身心合一校準標準程序，支援向指定節點派發 `agent.surface.inspect` 表面探測任務。
+3. **Unit Tests & Governance Verification (`tests/test_node_alignment.py`, `GOV-20261127-NODE-ALIGNMENT-SKILL.json`)**:
+   - 單元測試覆蓋多態節點狀態審計與表面任務派發（2/2 PASS）。
+   - 通過 `systemic_engineering_preflight.py` 體系化盤點與 `documentation_reality_guard.py` 文檔現實守衛。
+
+---
+
 ## 2026-11-26 — Fix: Gateway Allowlist for Governed Cross-Node Delegation Routes
 
 1. **Realm Next.js Gateway Allowlist Synchronization (`dashboard/app/api/agentos/[...path]/route.ts`)**:
