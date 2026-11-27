@@ -1,3 +1,18 @@
+## 2026-11-27 — Executor Experience Recovery Convergence & Unmerged Branch Guard (PR #2399)
+
+1. **Governed Executor Experience Recovery Convergence (`agentos_node/executor_experience_recovery.py`, `agentos_node/conversation_backfill.py`, `agent_core/historical_ir.py`)**:
+   - 徹底收斂先前滯留在特性分支之執行者探索與經驗回歸體系（1,200 行資產完整歸位主幹）。
+   - 節點執行 `join` 入籍時，自動探測本機運行的 AI 執行表面（Antigravity, Claude Code, Codex, ChatGPT），並為支援 `agent.context.harvest` 之執行者建立受限會話 Bridge。
+   - 支援將本機歷史對話日誌回填轉化為 `agentos.historical-ir/v1` 不可篡改紀錄，實現新節點入籍後本機經驗自動回歸 Central ONE 知識庫。
+2. **Unmerged Branch Convergence Physical Guard (`scripts/unmerged_branch_guard.py`)**:
+   - 建立實體防呆守衛，自動掃描所有相較於 `main` 脫離超過 14 天且存在代碼差異的孤島分支。
+   - 嚴禁口頭宣告「版本統一」，杜絕核心功能被遺留在未合併分支的治理盲點，強制要求進入收斂隊列或清理封存。
+3. **Unit Tests & Governance Verification (`tests/test_unmerged_branch_guard.py`, `tests/test_executor_experience_recovery.py`, `GOV-20261127-EXPERIENCE-RECOVERY-AND-BRANCH-GUARD.json`)**:
+   - 15 項經驗收割、對話回填與歷史 IR 單元測試全數 PASS。
+   - 分支防呆單元測試 PASS，通過 Preflight 審查與 Documentation Reality Guard。
+
+---
+
 ## 2026-11-27 — Cross-Node Alignment Engine & Alignment Skill (PR #2397)
 
 1. **Cross-Node Alignment Engine (`agent_core/node_alignment.py`)**:
