@@ -2,7 +2,11 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import grp, hashlib, json, os, uuid
+import hashlib, json, os, uuid
+try:
+    import grp
+except ImportError:
+    grp = None
 from pathlib import Path
 from typing import Any
 
@@ -19,16 +23,25 @@ def _canonical_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 def _shared_gid() -> int:
-    return grp.getgrnam(SHARED_GROUP).gr_gid
+    if grp is None:
+        return -1
+    try:
+        return grp.getgrnam(SHARED_GROUP).gr_gid
+    except (KeyError, OSError):
+        return -1
 
 def share_relay_path(path: Path, *, directory: bool = False) -> None:
-    try:
-        os.chown(path, -1, _shared_gid())
-    except PermissionError:
-        pass
+    if os.name == "nt" or grp is None:
+        return
+    gid = _shared_gid()
+    if gid != -1 and hasattr(os, "chown"):
+        try:
+            os.chown(path, -1, gid)
+        except (PermissionError, OSError):
+            pass
     try:
         os.chmod(path, SHARED_DIR_MODE if directory else SHARED_FILE_MODE)
-    except PermissionError:
+    except (PermissionError, OSError):
         if not directory:
             raise
 

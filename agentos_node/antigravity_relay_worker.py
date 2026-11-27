@@ -53,6 +53,7 @@ def _discover_claude() -> list[str] | None:
     patterns = [
         str(Path.home() / ".antigravity-ide-server/extensions/anthropic.claude-code-*-linux-arm64/resources/native-binary/claude"),
         str(Path.home() / ".antigravity-ide-server/extensions/anthropic.claude-code-*/resources/native-binary/claude"),
+        str(Path.home() / ".antigravity-ide/extensions/anthropic.claude-code-*/resources/native-binary/claude.exe"),
     ]
     matches: list[str] = []
     for pattern in patterns:
@@ -68,7 +69,10 @@ def _discover_agy() -> list[str] | None:
     candidate = Path.home() / ".local/bin/agy"
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return [str(candidate)]
-    found = shutil.which("agy")
+    win_candidate = Path.home() / ".gemini/bin/agy.exe"
+    if win_candidate.is_file():
+        return [str(win_candidate)]
+    found = shutil.which("agy") or shutil.which("agy.exe")
     return [str(Path(found).resolve())] if found else None
 
 
